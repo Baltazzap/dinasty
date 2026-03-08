@@ -212,11 +212,45 @@ class ApplicationModal(Modal, title="Анкета в семью"):
     def __init__(self):
         super().__init__()
         
-        self.info_field = TextInput(label="Ник в игре | Статик | Имя и возраст", placeholder="Например: Player123 | PC | Иван, 20 лет", max_length=100)
-        self.exp_field = TextInput(label="Опыт на RP серверах | Ежедневный онлайн", placeholder="Опыт: 1 год | Онлайн: 4 часа в день", style=discord.TextStyle.long, max_length=500)
-        self.prev_families = TextInput(label="В каких семьях состояли до?", style=discord.TextStyle.long, max_length=1000, required=False)
-        self.why_us = TextInput(label="Почему выбрали именно нас?", style=discord.TextStyle.long, max_length=1000)
-        self.skills = TextInput(label="Ваши навыки стрельбы (Видео до 5 минут)", placeholder="Ссылка на видео", max_length=500, required=False)
+        # Поле 1: Ник в игре | Статик | Имя и возраст
+        self.info_field = TextInput(
+            label="Ник в игре | Статик | Имя и возраст",
+            placeholder="Например: Player123 | PC | Иван, 20 лет",
+            max_length=100
+        )
+        
+        # Поле 2: Опыт на RP серверах | Ежедневный онлайн
+        self.exp_field = TextInput(
+            label="Опыт на RP серверах | Ежедневный онлайн",
+            placeholder="Например: 1 год | 4 часа в день",
+            style=discord.TextStyle.long,
+            max_length=500
+        )
+        
+        # Поле 3: В каких семьях состояли до? (с новым placeholder)
+        self.prev_families = TextInput(
+            label="В каких семьях состояли до?",
+            placeholder="(По какой причине покинули?)",
+            style=discord.TextStyle.long,
+            max_length=1000,
+            required=False
+        )
+        
+        # Поле 4: Почему выбрали именно нас? (с новым placeholder)
+        self.why_us = TextInput(
+            label="Почему выбрали именно нас?",
+            placeholder="(Какую пользу сможете принести нашей семье?)",
+            style=discord.TextStyle.long,
+            max_length=1000
+        )
+        
+        # Поле 5: Ваши навыки стрельбы (с новым placeholder)
+        self.skills = TextInput(
+            label="Ваши навыки стрельбы (Видео до 5 минут)",
+            placeholder="(Видео откат с любого МП, файта, арены)",
+            max_length=500,
+            required=False
+        )
 
         self.add_item(self.info_field)
         self.add_item(self.exp_field)
@@ -301,17 +335,14 @@ class ApplicationModal(Modal, title="Анкета в семью"):
                 await interaction.response.send_message("Произошла ошибка при создании канала. Администратор был уведомлен.", ephemeral=True)
 
 class StartApplicationButton(View):
-    # ✅ timeout=None чтобы кнопка работала постоянно
     def __init__(self):
         super().__init__(timeout=None)
     
     @discord.ui.button(label="📩 Подать заявку в семью", style=discord.ButtonStyle.green, custom_id="start_app_btn")
     async def button_callback(self, interaction: discord.Interaction, button: Button):
         try:
-            # ✅ Проверяем, не нажата ли кнопка уже
             await interaction.response.send_modal(ApplicationModal())
         except discord.errors.InteractionResponded:
-            # Если уже ответили (редкий случай), игнорируем
             pass
         except Exception as e:
             print(f"Ошибка в button_callback: {e}")
