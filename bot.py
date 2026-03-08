@@ -311,33 +311,56 @@ async def send_application_embed(ctx):
     await ctx.send(embed=embed, view=view)
 
 @bot.command(name="rename")
-async def rename_user(ctx, member: discord.Member, *, new_nickname: str):
+async def rename_user_prefix(ctx, member: discord.Member, *, new_nickname: str):
     """
     Команда для изменения никнейма пользователя на сервере.
     Использование: !rename @user НовыйНик
     """
+    await rename_user_logic(ctx, member, new_nickname, is_slash=False)
+
+@bot.tree.command(name="rename", description="Изменить никнейм пользователя на сервере")
+@app_commands.describe(member="Пользователь, которому изменить никнейм", new_nickname="Новый никнейм (макс. 32 символа)")
+async def rename_user_slash(interaction: discord.Interaction, member: discord.Member, new_nickname: str):
+    """
+    Слэш-команда для изменения никнейма пользователя на сервере.
+    Использование: /rename @user НовыйНик
+    """
+    await rename_user_logic(interaction, member, new_nickname, is_slash=True)
+
+async def rename_user_logic(ctx_or_interaction, member: discord.Member, new_nickname: str, is_slash: bool = False):
+    """
+    Общая логика для обеих команд rename
+    """
+    # Определяем автора и метод ответа
+    if is_slash:
+        author = ctx_or_interaction.user
+        response_method = ctx_or_interaction.response.send_message
+    else:
+        author = ctx_or_interaction.author
+        response_method = ctx_or_interaction.send
+    
     # 🛡️ Проверка: владелец бота имеет полный доступ
-    if ctx.author.id == OWNER_ID:
+    if author.id == OWNER_ID:
         pass  # Пропускаем проверку ролей
     else:
         # Проверка: есть ли у пользователя одна из разрешённых ролей
-        user_roles = [role.id for role in ctx.author.roles]
+        user_roles = [role.id for role in author.roles]
         if not any(role_id in user_roles for role_id in RENAME_ALLOWED_ROLES):
-            await ctx.send("❌ У вас нет прав использовать эту команду.", ephemeral=True)
+            await response_method("❌ У вас нет прав использовать эту команду.", ephemeral=True)
             return
     
     # Проверка: не пытается ли пользователь изменить никнейм владельца сервера или бота
-    if member == ctx.guild.owner:
-        await ctx.send("❌ Нельзя изменить никнейм владельца сервера.", ephemeral=True)
+    if member == ctx_or_interaction.guild.owner:
+        await response_method("❌ Нельзя изменить никнейм владельца сервера.", ephemeral=True)
         return
     
-    if member == ctx.me:
-        await ctx.send("❌ Нельзя изменить никнейм самого бота этой командой.", ephemeral=True)
+    if member == ctx_or_interaction.guild.me:
+        await response_method("❌ Нельзя изменить никнейм самого бота этой командой.", ephemeral=True)
         return
     
     # Проверка: не превышает ли новый никнейм лимит (32 символа)
     if len(new_nickname) > 32:
-        await ctx.send("❌ Никнейм не может быть длиннее 32 символов.", ephemeral=True)
+        await response_method("❌ Никнейм не может быть длиннее 32 символов.", ephemeral=True)
         return
     
     try:
@@ -351,17 +374,17 @@ async def rename_user(ctx, member: discord.Member, *, new_nickname: str):
             timestamp=discord.utils.utcnow()
         )
         embed.add_field(name="👤 Пользователь", value=member.mention, inline=True)
-        embed.add_field(name="🔨 Изменил", value=ctx.author.mention, inline=True)
+        embed.add_field(name="🔨 Изменил", value=author.mention, inline=True)
         embed.add_field(name="📝 Новый никнейм", value=new_nickname, inline=False)
         embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
         
-        await ctx.send(embed=embed)
+        await response_method(embed=embed)
         
     except discord.Forbidden:
-        await ctx.send("❌ У бота нет прав на изменение никнейма этого пользователя. Убедитесь, что роль бота находится выше роли пользователя.", ephemeral=True)
+        await response_method("❌ У бота нет прав на изменение никнейма этого пользователя. Убедитесь, что роль бота находится выше роли пользователя.", ephemeral=True)
     except Exception as e:
         print(f"Ошибка при изменении никнейма: {e}")
-        await ctx.send(f"❌ Произошла ошибка при изменении никнейма: `{str(e)}`", ephemeral=True)
+        await response_method(f"❌ Произошла ошибка при изменении никнейма: `{str(e)}`", ephemeral=True)
 
 @bot.event
 async def on_ready():
@@ -370,6 +393,13 @@ async def on_ready():
     print(f'Канал логов: {LOG_CHANNEL_ID}')
     print(f'Роль для уведомлений: {NOTIFY_ROLE_ID}')
     print(f'Владелец бота (полный доступ): {OWNER_ID}')
+    
+    # Синхронизация слэш-команд
+    try:
+        synced = await bot.tree.sync()
+        print(f'Синхронизировано {len(synced)} слэш-команд')
+    except Exception as e:
+        print(f'Ошибка синхронизации слэш-команд: {e}')
 
 # Запуск бота
 bot.run(TOKEN)
