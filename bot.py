@@ -42,6 +42,11 @@ RENAME_ALLOWED_ROLES = [
     1449567765810778211
 ]
 
+# 🎭 Роли для управления при принятии заявки
+ROLE_ADD_1 = 1449567765798191154  # Роль 1 для выдачи
+ROLE_ADD_2 = 1449575866630934640  # Роль 2 для выдачи
+ROLE_REMOVE = 1449575999850418308  # Роль для удаления
+
 # --- НАСТРОЙКИ БОТА ---
 intents = discord.Intents.default()
 intents.message_content = True
@@ -171,7 +176,26 @@ class TicketButtons(View):
     async def accept_callback(self, interaction: discord.Interaction, button: Button):
         await self.send_to_logs(interaction, "✅ Заявка ОДОБРЕНА", discord.Color.green())
         
-        await interaction.response.send_message("Заявка принята! Канал будет удален через 5 секунд.", ephemeral=True)
+        # 🎭 Управление ролями при принятии
+        try:
+            # Выдаём роли
+            role1 = interaction.guild.get_role(ROLE_ADD_1)
+            role2 = interaction.guild.get_role(ROLE_ADD_2)
+            
+            if role1:
+                await self.applicant.add_roles(role1, reason="Заявка в семью одобрена")
+            if role2:
+                await self.applicant.add_roles(role2, reason="Заявка в семью одобрена")
+            
+            # Удаляем роль
+            role_remove = interaction.guild.get_role(ROLE_REMOVE)
+            if role_remove:
+                await self.applicant.remove_roles(role_remove, reason="Заявка в семью одобрена")
+                
+        except Exception as e:
+            print(f"Ошибка при управлении ролями: {e}")
+        
+        await interaction.response.send_message("Заявка принята! Роли выданы. Канал будет удален через 5 секунд.", ephemeral=True)
         await asyncio.sleep(5)
         await interaction.channel.delete()
 
@@ -393,6 +417,9 @@ async def on_ready():
     print(f'Канал логов: {LOG_CHANNEL_ID}')
     print(f'Роль для уведомлений: {NOTIFY_ROLE_ID}')
     print(f'Владелец бота (полный доступ): {OWNER_ID}')
+    print(f'Роль для выдачи 1: {ROLE_ADD_1}')
+    print(f'Роль для выдачи 2: {ROLE_ADD_2}')
+    print(f'Роль для удаления: {ROLE_REMOVE}')
     
     # Синхронизация слэш-команд
     try:
