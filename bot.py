@@ -14,7 +14,7 @@ if not TOKEN:
     exit()
 
 # --- КОНФИГУРАЦИЯ ID ---
-CATEGORY_ID = 1449573036712919050
+CATEGORY_ID = 1451275518740791326  # 🔄 Обновлённый ID категории
 LOG_CHANNEL_ID = 1449573243735511153
 VOICE_CHANNEL_ID = 1449567766666416148
 
@@ -39,6 +39,68 @@ intents.members = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 # --- КЛАССЫ ИНТЕРФЕЙСА (UI) ---
+
+class DeclineReasonModal(Modal, title="Причина отклонения"):
+    """Модальное окно для указания причины отклонения"""
+    def __init__(self, applicant: discord.Member, application_message_id: int, interaction: discord.Interaction):
+        super().__init__()
+        self.applicant = applicant
+        self.application_message_id = application_message_id
+        self.original_interaction = interaction
+        
+        self.reason_input = TextInput(
+            label="Укажите причину отклонения",
+            placeholder="Например: Не подходит по возрасту / Мало опыта / Не заполнены поля",
+            style=discord.TextStyle.long,
+            max_length=500,
+            required=True
+        )
+        self.add_item(self.reason_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await self.send_to_logs_with_reason(interaction, self.reason_input.value)
+
+    async def send_to_logs_with_reason(self, interaction: discord.Interaction, reason: str):
+        """Отправляет результат с причиной в канал логов"""
+        log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
+        if not log_channel:
+            return
+
+        try:
+            app_message = await interaction.channel.fetch_message(self.application_message_id)
+            embeds = app_message.embeds
+        except Exception:
+            embeds = []
+
+        # Главный эмбед с результатом
+        result_embed = discord.Embed(title="❌ Заявка ОТКЛОНЕНА", color=discord.Color.red())
+        result_embed.add_field(name="Кандидат", value=self.applicant.mention)
+        result_embed.add_field(name="Обработал", value=interaction.user.mention)
+        result_embed.add_field(name="📝 Причина", value=reason, inline=False)
+        result_embed.set_footer(text=f"ID пользователя: {self.applicant.id}")
+
+        await log_channel.send(embed=result_embed)
+        
+        # Отправляем анкету кандидата следом
+        if embeds:
+            for embed in embeds:
+                await asyncio.sleep(0.5)
+                await log_channel.send(embed=embed)
+        
+        # Уведомляем кандидата в ЛС (если возможно)
+        try:
+            await self.applicant.send(
+                f"❌ Ваша заявка в семью была отклонена.\n"
+                f"📝 **Причина:** {reason}\n"
+                f"Вы можете подать новую заявку через некоторое время, если исправите указанные недостатки."
+            )
+        except:
+            pass  # ЛС закрыты или бот не может написать
+
+        await self.original_interaction.followup.send("Заявка отклонена! Канал будет удален через 5 секунд.", ephemeral=True)
+        await asyncio.sleep(5)
+        await interaction.channel.delete()
+
 
 class TicketButtons(View):
     def __init__(self, applicant: discord.Member, application_message_id: int):
@@ -86,11 +148,10 @@ class TicketButtons(View):
 
     @discord.ui.button(label="Отклонить", style=discord.ButtonStyle.red, custom_id="decline_app")
     async def decline_callback(self, interaction: discord.Interaction, button: Button):
-        await self.send_to_logs(interaction, "❌ Заявка ОТКЛОНЕНА", discord.Color.red())
-
-        await interaction.response.send_message("Заявка отклонена! Канал будет удален через 5 секунд.", ephemeral=True)
-        await asyncio.sleep(5)
-        await interaction.channel.delete()
+        # Открываем модальное окно для указания причины
+        await interaction.response.send_modal(
+            DeclineReasonModal(self.applicant, self.application_message_id, interaction)
+        )
 
     @discord.ui.button(label="Позвать на собес", style=discord.ButtonStyle.blurple, custom_id="interview_app")
     async def interview_callback(self, interaction: discord.Interaction, button: Button):
@@ -195,7 +256,7 @@ async def send_application_embed(ctx):
         return
 
     embed = discord.Embed(
-        title="🤝 Путь в семью начинается здесь!",  # 🤝 вместо :hello:
+        title="🤝 Путь в семью начинается здесь!",
         description=(
             "После заполнения анкеты Вам придет оповещение в ЛС от бота с результатом.\n"
             "Обычно заявки обрабатываются в течение 2–7 дней — всё зависит от того, "
@@ -204,10 +265,7 @@ async def send_application_embed(ctx):
         color=discord.Color.gold()
     )
     
-    # 🖼️ Картинка внизу (большая)
     embed.set_image(url="https://i.imgur.com/bRqv7WM.jpeg")
-    
-    # 🖼️ Аватарка в углу (справа сверху)
     embed.set_thumbnail(url="https://i.imgur.com/kJy80lj.png")
     
     view = StartApplicationButton()
