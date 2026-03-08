@@ -23,7 +23,7 @@ LOG_CHANNEL_ID = 1449573243735511153
 # Голосовой канал для собеседования
 VOICE_CHANNEL_ID = 1449567766666416148
 
-# Роли, которые могут использовать команду !заявка (ОБНОВЛЕНО)
+# Роли, которые могут использовать команду !заявка
 COMMAND_ALLOWED_ROLES = [1449567765844459572]
 
 # Роли, которые могут нажимать кнопки в тикете (Администрация)
@@ -49,7 +49,6 @@ class TicketButtons(View):
         self.applicant = applicant
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        # Проверка: есть ли у нажавшего одна из админских ролей
         user_roles = [role.id for role in interaction.user.roles]
         if not any(role_id in user_roles for role_id in TICKET_ADMIN_ROLES):
             await interaction.response.send_message("У вас нет прав использовать эти кнопки.", ephemeral=True)
@@ -58,7 +57,6 @@ class TicketButtons(View):
 
     @discord.ui.button(label="Принять", style=discord.ButtonStyle.green, custom_id="accept_app")
     async def accept_callback(self, interaction: discord.Interaction, button: Button):
-        # Логирование
         log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
         if log_channel:
             embed = discord.Embed(title="✅ Заявка ОДОБРЕНА", color=discord.Color.green())
@@ -71,7 +69,6 @@ class TicketButtons(View):
 
     @discord.ui.button(label="Отклонить", style=discord.ButtonStyle.red, custom_id="decline_app")
     async def decline_callback(self, interaction: discord.Interaction, button: Button):
-        # Логирование
         log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
         if log_channel:
             embed = discord.Embed(title="❌ Заявка ОТКЛОНЕНА", color=discord.Color.red())
@@ -91,32 +88,56 @@ class TicketButtons(View):
         )
 
 class ApplicationModal(Modal, title="Анкета в семью"):
-    """Форма заполнения заявки"""
+    """Форма заполнения заявки (5 полей - лимит Discord)"""
     def __init__(self):
         super().__init__()
         
-        # Поля формы
-        self.nickname = TextInput(label="Ник в игре", placeholder="Ваш никнейм", max_length=50)
-        self.static = TextInput(label="Статик", placeholder="Например: PC/Console", max_length=50)
-        self.name_age = TextInput(label="Имя и возраст", placeholder="Иван, 20 лет", max_length=50)
-        self.rp_exp = TextInput(label="Опыт на RP серверах", style=discord.TextStyle.long, max_length=1000)
-        self.online = TextInput(label="Ежедневный онлайн", placeholder="Сколько часов в день", max_length=100)
-        self.prev_families = TextInput(label="В каких семьях состояли до?", style=discord.TextStyle.long, max_length=1000, required=False)
-        self.why_us = TextInput(label="Почему выбрали именно нас?", style=discord.TextStyle.long, max_length=1000)
-        self.skills = TextInput(label="Ваши навыки стрельбы (Видео до 5 минут)", placeholder="Ссылка на видео", max_length=500, required=False)
+        # Поле 1: Основная информация (объединено)
+        self.info_field = TextInput(
+            label="Ник в игре | Статик | Имя и возраст", 
+            placeholder="Например: Player123 | PC | Иван, 20 лет", 
+            max_length=100
+        )
+        
+        # Поле 2: Опыт и онлайн (объединено)
+        self.exp_field = TextInput(
+            label="Опыт на RP серверах | Ежедневный онлайн", 
+            placeholder="Опыт: 1 год | Онлайн: 4 часа в день", 
+            style=discord.TextStyle.long,
+            max_length=500
+        )
+        
+        # Поле 3: Прошлые семьи
+        self.prev_families = TextInput(
+            label="В каких семьях состояли до?", 
+            style=discord.TextStyle.long, 
+            max_length=1000, 
+            required=False
+        )
+        
+        # Поле 4: Мотивация
+        self.why_us = TextInput(
+            label="Почему выбрали именно нас?", 
+            style=discord.TextStyle.long, 
+            max_length=1000
+        )
+        
+        # Поле 5: Навыки
+        self.skills = TextInput(
+            label="Ваши навыки стрельбы (Видео до 5 минут)", 
+            placeholder="Ссылка на видео", 
+            max_length=500, 
+            required=False
+        )
 
-        # Добавляем поля в модальное окно
-        self.add_item(self.nickname)
-        self.add_item(self.static)
-        self.add_item(self.name_age)
-        self.add_item(self.rp_exp)
-        self.add_item(self.online)
+        # Добавляем ровно 5 полей
+        self.add_item(self.info_field)
+        self.add_item(self.exp_field)
         self.add_item(self.prev_families)
         self.add_item(self.why_us)
         self.add_item(self.skills)
 
     async def on_submit(self, interaction: discord.Interaction):
-        # Создаем канал
         category = interaction.guild.get_channel(CATEGORY_ID)
         if not category:
             await interaction.response.send_message("Ошибка: Категория для заявок не найдена.", ephemeral=True)
@@ -130,30 +151,25 @@ class ApplicationModal(Modal, title="Анкета в семью"):
                 topic=f"Заявка от {interaction.user.name}"
             )
             
-            # Настраиваем права доступа (чтобы видел только автор и админы)
+            # Настройка прав доступа
             await new_channel.set_permission(interaction.guild.default_role, view_channel=False)
             await new_channel.set_permission(interaction.user, view_channel=True, send_messages=True)
             
-            # Добавляем права админ ролям (чтобы они могли зайти)
             for role_id in TICKET_ADMIN_ROLES:
                 role = interaction.guild.get_role(role_id)
                 if role:
                     await new_channel.set_permission(role, view_channel=True, send_messages=True)
 
-            # Формируем эмбед с данными анкеты
+            # Эмбед с данными анкеты
             embed = discord.Embed(title=":file_folder: Новая заявка в семью", color=discord.Color.blue())
             embed.set_author(name=interaction.user.name, icon_url=interaction.user.avatar.url)
-            embed.add_field(name=":bust_in_silhouette: Ник в игре", value=self.nickname.value, inline=True)
-            embed.add_field(name=":game_die: Статик", value=self.static.value, inline=True)
-            embed.add_field(name=":birthday: Имя и возраст", value=self.name_age.value, inline=True)
-            embed.add_field(name=":book: Опыт RP", value=self.rp_exp.value, inline=False)
-            embed.add_field(name=":clock: Онлайн", value=self.online.value, inline=True)
-            embed.add_field(name=":family: Прошлые семьи", value=self.prev_families.value or "Не указано", inline=True)
+            embed.add_field(name=":bust_in_silhouette: Информация", value=self.info_field.value, inline=False)
+            embed.add_field(name=":book: Опыт и онлайн", value=self.exp_field.value, inline=False)
+            embed.add_field(name=":family: Прошлые семьи", value=self.prev_families.value or "Не указано", inline=False)
             embed.add_field(name=":question: Почему мы?", value=self.why_us.value, inline=False)
             embed.add_field(name=":crossed_swords: Навыки (Видео)", value=self.skills.value or "Не предоставлено", inline=False)
             embed.set_footer(text=f"ID пользователя: {interaction.user.id}")
 
-            # Отправляем сообщение в новый канал
             await new_channel.send(f"Заявка от {interaction.user.mention}", embed=embed, view=TicketButtons(interaction.user))
             
             await interaction.response.send_message(f"Ваша заявка отправлена! Проверьте канал {new_channel.mention}", ephemeral=True)
@@ -172,7 +188,6 @@ class StartApplicationButton(View):
 
 @bot.command(name="заявка")
 async def send_application_embed(ctx):
-    # Проверка роли для использования команды
     user_roles = [role.id for role in ctx.author.roles]
     if not any(role_id in user_roles for role_id in COMMAND_ALLOWED_ROLES):
         await ctx.send("У вас нет доступа к этой команде.", ephemeral=True)
