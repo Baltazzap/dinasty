@@ -295,19 +295,14 @@ class PrivateChannelButtons(View):
                 topic=f"Личная ветка от {interaction.user.name}"
             )
             
-            # Скрываем от всех по умолчанию
             await new_channel.set_permissions(interaction.guild.default_role, view_channel=False, send_messages=False)
-            
-            # Даем доступ автору
             await new_channel.set_permissions(interaction.user, view_channel=True, send_messages=True)
             
-            # Даем доступ админским ролям
             for role_id in PRIVATE_CHANNEL_VISIBLE_ROLES:
                 role = interaction.guild.get_role(role_id)
                 if role:
                     await new_channel.set_permissions(role, view_channel=True, send_messages=True)
             
-            # Отправляем приветственное сообщение
             embed = discord.Embed(
                 title="🔒 Личная ветка создана",
                 description=f"Добро пожаловать в вашу личную ветку, {interaction.user.mention}!\n\nЭтот канал виден только вам и администрации.",
@@ -504,20 +499,14 @@ async def send_application_embed(ctx):
 
 @bot.command(name="ветка")
 async def private_channel_command(ctx):
-    """
-    Команда для создания эмбеда с кнопкой создания личной ветки.
-    Использование: !ветка
-    """
     try:
         await ctx.message.delete()
     except:
         pass
     
-    # 🛡️ Проверка: владелец бота имеет полный доступ
     if ctx.author.id == OWNER_ID:
         pass
     else:
-        # Проверка: есть ли у пользователя одна из админских ролей
         user_roles = [role.id for role in ctx.author.roles]
         if not any(role_id in user_roles for role_id in ADMIN_ROLES):
             await ctx.send("❌ У вас нет прав использовать эту команду.", ephemeral=True)
@@ -537,15 +526,9 @@ async def private_channel_command(ctx):
 
 @bot.tree.command(name="ветка", description="Создать эмбед для создания личной ветки")
 async def private_channel_slash(interaction: discord.Interaction):
-    """
-    Слэш-команда для создания эмбеда с кнопкой создания личной ветки.
-    Использование: /ветка
-    """
-    # 🛡️ Проверка: владелец бота имеет полный доступ
     if interaction.user.id == OWNER_ID:
         pass
     else:
-        # Проверка: есть ли у пользователя одна из админских ролей
         user_roles = [role.id for role in interaction.user.roles]
         if not any(role_id in user_roles for role_id in ADMIN_ROLES):
             await interaction.response.send_message("❌ У вас нет прав использовать эту команду.", ephemeral=True)
@@ -637,6 +620,11 @@ async def on_ready():
     print(f'Роль для выдачи 1: {ROLE_ADD_1}')
     print(f'Роль для выдачи 2: {ROLE_ADD_2}')
     print(f'Роль для удаления: {ROLE_REMOVE}')
+    
+    # ✅ РЕГИСТРАЦИЯ ПОСТОЯННЫХ КНОПОК (РАБОТАЮТ ПОСЛЕ ПЕРЕЗАПУСКА)
+    bot.add_view(StartApplicationButton())
+    bot.add_view(PrivateChannelButtons())
+    print('✅ Постоянные кнопки зарегистрированы')
     
     try:
         synced = await bot.tree.sync()
