@@ -21,10 +21,21 @@ VOICE_CHANNEL_ID = 1449567766666416148
 # Роль для упоминания при новой заявке
 NOTIFY_ROLE_ID = 1449567765810778202
 
+# 🛡️ ID владельца бота (имеет полный доступ ко всем функциям)
+OWNER_ID = 314805583788244993
+
 COMMAND_ALLOWED_ROLES = [1449567765844459572]
 
 # Роли, которые могут нажимать кнопки в тикете (Администрация)
 TICKET_ADMIN_ROLES = [
+    1449567765810778202,
+    1449567765810778205,
+    1449567765810778210,
+    1449567765810778211
+]
+
+# 🛠️ Роли, которые могут использовать команду !rename
+RENAME_ALLOWED_ROLES = [
     1449567765810778202,
     1449567765810778205,
     1449567765810778210,
@@ -114,6 +125,11 @@ class TicketButtons(View):
         self.application_embed = application_embed  # Сохраняем эмбед анкеты
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        # 🛡️ Проверка: владелец бота имеет полный доступ
+        if interaction.user.id == OWNER_ID:
+            return True
+        
+        # Проверка: есть ли у нажавшего одна из админских ролей
         user_roles = [role.id for role in interaction.user.roles]
         if not any(role_id in user_roles for role_id in TICKET_ADMIN_ROLES):
             await interaction.response.send_message("У вас нет прав использовать эти кнопки.", ephemeral=True)
@@ -220,14 +236,14 @@ class ApplicationModal(Modal, title="Анкета в семью"):
                 if role:
                     await new_channel.set_permissions(role, view_channel=True, send_messages=True)
 
-            # Создаем эмбед анкеты
+            # 📝 Создаем эмбед анкеты с теми же названиями полей, что и в модальном окне
             app_embed = discord.Embed(title=":file_folder: Анкета кандидата", color=discord.Color.blue())
             app_embed.set_author(name=interaction.user.name, icon_url=interaction.user.avatar.url)
-            app_embed.add_field(name=":bust_in_silhouette: Информация", value=self.info_field.value, inline=False)
-            app_embed.add_field(name=":book: Опыт и онлайн", value=self.exp_field.value, inline=False)
-            app_embed.add_field(name=":family: Прошлые семьи", value=self.prev_families.value or "Не указано", inline=False)
-            app_embed.add_field(name=":question: Почему мы?", value=self.why_us.value, inline=False)
-            app_embed.add_field(name=":crossed_swords: Навыки (Видео)", value=self.skills.value or "Не предоставлено", inline=False)
+            app_embed.add_field(name="Ник в игре | Статик | Имя и возраст", value=self.info_field.value, inline=False)
+            app_embed.add_field(name="Опыт на RP серверах | Ежедневный онлайн", value=self.exp_field.value, inline=False)
+            app_embed.add_field(name="В каких семьях состояли до?", value=self.prev_families.value or "Не указано", inline=False)
+            app_embed.add_field(name="Почему выбрали именно нас?", value=self.why_us.value, inline=False)
+            app_embed.add_field(name="Ваши навыки стрельбы (Видео до 5 минут)", value=self.skills.value or "Не предоставлено", inline=False)
             app_embed.set_footer(text=f"ID пользователя: {interaction.user.id}")
 
             notify_role = interaction.guild.get_role(NOTIFY_ROLE_ID)
@@ -258,7 +274,7 @@ class ApplicationModal(Modal, title="Анкета в семью"):
             await interaction.response.send_message("Произошла ошибка при создании канала. Администратор был уведомлен.", ephemeral=True)
 
 class StartApplicationButton(View):
-    @discord.ui.button(label="Подать заявку в семью", style=discord.ButtonStyle.green, custom_id="start_app_btn")
+    @discord.ui.button(label="📩 Подать заявку в семью", style=discord.ButtonStyle.green, custom_id="start_app_btn")
     async def button_callback(self, interaction: discord.Interaction, button: Button):
         await interaction.response.send_modal(ApplicationModal())
 
@@ -266,10 +282,14 @@ class StartApplicationButton(View):
 
 @bot.command(name="заявка")
 async def send_application_embed(ctx):
-    user_roles = [role.id for role in ctx.author.roles]
-    if not any(role_id in user_roles for role_id in COMMAND_ALLOWED_ROLES):
-        await ctx.send("У вас нет доступа к этой команде.", ephemeral=True)
-        return
+    # 🛡️ Проверка: владелец бота имеет полный доступ
+    if ctx.author.id == OWNER_ID:
+        pass  # Пропускаем проверку ролей
+    else:
+        user_roles = [role.id for role in ctx.author.roles]
+        if not any(role_id in user_roles for role_id in COMMAND_ALLOWED_ROLES):
+            await ctx.send("У вас нет доступа к этой команде.", ephemeral=True)
+            return
 
     embed = discord.Embed(
         title="🤝 Путь в семью начинается здесь!",
@@ -277,10 +297,10 @@ async def send_application_embed(ctx):
         color=discord.Color.gold()
     )
     
-    # 📌 Информация о времени обработки (ниже в описании)
+    # 📌 Информация о времени обработки (обновлённый текст)
     embed.add_field(
         name="⏱️ Срок рассмотрения",
-        value="Заявки обрабатываются от 2 до 24 часов",
+        value="Заявки обрабатываются от 2 до 24 часов — всё зависит от того, насколько загружены наши рекрутеры на данный момент.",
         inline=False
     )
     
@@ -290,12 +310,66 @@ async def send_application_embed(ctx):
     view = StartApplicationButton()
     await ctx.send(embed=embed, view=view)
 
+@bot.command(name="rename")
+async def rename_user(ctx, member: discord.Member, *, new_nickname: str):
+    """
+    Команда для изменения никнейма пользователя на сервере.
+    Использование: !rename @user НовыйНик
+    """
+    # 🛡️ Проверка: владелец бота имеет полный доступ
+    if ctx.author.id == OWNER_ID:
+        pass  # Пропускаем проверку ролей
+    else:
+        # Проверка: есть ли у пользователя одна из разрешённых ролей
+        user_roles = [role.id for role in ctx.author.roles]
+        if not any(role_id in user_roles for role_id in RENAME_ALLOWED_ROLES):
+            await ctx.send("❌ У вас нет прав использовать эту команду.", ephemeral=True)
+            return
+    
+    # Проверка: не пытается ли пользователь изменить никнейм владельца сервера или бота
+    if member == ctx.guild.owner:
+        await ctx.send("❌ Нельзя изменить никнейм владельца сервера.", ephemeral=True)
+        return
+    
+    if member == ctx.me:
+        await ctx.send("❌ Нельзя изменить никнейм самого бота этой командой.", ephemeral=True)
+        return
+    
+    # Проверка: не превышает ли новый никнейм лимит (32 символа)
+    if len(new_nickname) > 32:
+        await ctx.send("❌ Никнейм не может быть длиннее 32 символов.", ephemeral=True)
+        return
+    
+    try:
+        # Изменяем никнейм
+        await member.edit(nick=new_nickname)
+        
+        # Создаем эмбед с подтверждением
+        embed = discord.Embed(
+            title="✅ Никнейм изменён",
+            color=discord.Color.green(),
+            timestamp=discord.utils.utcnow()
+        )
+        embed.add_field(name="👤 Пользователь", value=member.mention, inline=True)
+        embed.add_field(name="🔨 Изменил", value=ctx.author.mention, inline=True)
+        embed.add_field(name="📝 Новый никнейм", value=new_nickname, inline=False)
+        embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
+        
+        await ctx.send(embed=embed)
+        
+    except discord.Forbidden:
+        await ctx.send("❌ У бота нет прав на изменение никнейма этого пользователя. Убедитесь, что роль бота находится выше роли пользователя.", ephemeral=True)
+    except Exception as e:
+        print(f"Ошибка при изменении никнейма: {e}")
+        await ctx.send(f"❌ Произошла ошибка при изменении никнейма: `{str(e)}`", ephemeral=True)
+
 @bot.event
 async def on_ready():
     print(f'Бот запущен как {bot.user}')
     print(f'Категория заявок: {CATEGORY_ID}')
     print(f'Канал логов: {LOG_CHANNEL_ID}')
     print(f'Роль для уведомлений: {NOTIFY_ROLE_ID}')
+    print(f'Владелец бота (полный доступ): {OWNER_ID}')
 
 # Запуск бота
 bot.run(TOKEN)
