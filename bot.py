@@ -3,16 +3,12 @@ from discord import app_commands
 from discord.ext import commands
 from discord.ui import Button, View, Modal, TextInput
 import os
-from dotenv import load_dotenv
 
-# Загрузка переменных из файла .env
-load_dotenv()
-
-# Получение токена из переменной DISCORD_TOKEN
+# Получение токена из переменной окружения DISCORD_TOKEN
 TOKEN = os.getenv('DISCORD_TOKEN')
 
 if not TOKEN:
-    print("Ошибка: Токен не найден. Проверьте файл .env и переменную DISCORD_TOKEN")
+    print("Ошибка: Токен не найден. Проверьте переменную окружения DISCORD_TOKEN")
     exit()
 
 # --- КОНФИГУРАЦИЯ ID ---
