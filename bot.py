@@ -98,13 +98,11 @@ class ApplicationModal(Modal, title="Анкета в семью"):
         try:
             category = interaction.guild.get_channel(CATEGORY_ID)
             
-            # Проверка существования категории
             if not category:
                 print(f"ОШИБКА: Категория {CATEGORY_ID} не найдена!")
                 await interaction.response.send_message("Ошибка: Категория для заявок не найдена. Обратитесь к администратору.", ephemeral=True)
                 return
 
-            # Проверка типа канала
             if not isinstance(category, discord.CategoryChannel):
                 print(f"ОШИБКА: Канал {CATEGORY_ID} не является категорией!")
                 await interaction.response.send_message("Ошибка: Указанный ID не является категорией.", ephemeral=True)
@@ -112,23 +110,21 @@ class ApplicationModal(Modal, title="Анкета в семью"):
 
             channel_name = f"заявка-{interaction.user.name}"
             
-            # Создание канала
             new_channel = await category.create_text_channel(
                 name=channel_name,
                 reason="Создание заявки в семью",
                 topic=f"Заявка от {interaction.user.name}"
             )
             
-            # Настройка прав доступа
-            await new_channel.set_permission(interaction.guild.default_role, view_channel=False)
-            await new_channel.set_permission(interaction.user, view_channel=True, send_messages=True)
+            # ИСПРАВЛЕНО: set_permission -> set_permissions
+            await new_channel.set_permissions(interaction.guild.default_role, view_channel=False)
+            await new_channel.set_permissions(interaction.user, view_channel=True, send_messages=True)
             
             for role_id in TICKET_ADMIN_ROLES:
                 role = interaction.guild.get_role(role_id)
                 if role:
-                    await new_channel.set_permission(role, view_channel=True, send_messages=True)
+                    await new_channel.set_permissions(role, view_channel=True, send_messages=True)
 
-            # Эмбед с данными
             embed = discord.Embed(title=":file_folder: Новая заявка в семью", color=discord.Color.blue())
             embed.set_author(name=interaction.user.name, icon_url=interaction.user.avatar.url)
             embed.add_field(name=":bust_in_silhouette: Информация", value=self.info_field.value, inline=False)
@@ -143,7 +139,6 @@ class ApplicationModal(Modal, title="Анкета в семью"):
             await interaction.response.send_message(f"Ваша заявка отправлена! Проверьте канал {new_channel.mention}", ephemeral=True)
 
         except Exception as e:
-            # Детальное логирование ошибки
             error_trace = traceback.format_exc()
             print(f"=== ОШИБКА ПРИ СОЗДАНИИ КАНАЛА ===")
             print(f"Пользователь: {interaction.user.name} ({interaction.user.id})")
@@ -151,7 +146,6 @@ class ApplicationModal(Modal, title="Анкета в семью"):
             print(f"Traceback:\n{error_trace}")
             print(f"=================================")
             
-            # Отправка информации об ошибке создателю заявки
             try:
                 await interaction.user.send(f"⚠️ Произошла ошибка при создании заявки:\n```\n{str(e)}\n```")
             except:
