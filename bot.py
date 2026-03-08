@@ -208,40 +208,61 @@ class TicketButtons(View):
             if not interaction.response.is_done():
                 await interaction.response.send_message("Произошла ошибка при обработке.", ephemeral=True)
 
-    # 🚫 Новая кнопка: Закрыть заявку
+    # 🚫 Кнопка: Закрыть заявку (ИСПРАВЛЕНО)
     @discord.ui.button(label="Закрыть заявку", style=discord.ButtonStyle.gray, custom_id="close_ticket")
     async def close_callback(self, interaction: discord.Interaction, button: Button):
         try:
-            # Отправляем в логи информацию о закрытии
             log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
+            
+            # Создаем базовый эмбед
+            log_embed = discord.Embed(
+                title="🚫 Заявка ЗАКРЫТА",
+                color=discord.Color.gray(),
+                timestamp=discord.utils.utcnow()
+            )
+            
+            # ✅ Безопасное упоминание кандидата (даже если он покинул сервер)
+            try:
+                candidate_mention = self.applicant.mention
+            except:
+                candidate_mention = f"<@{self.applicant.id}>"
+            
+            log_embed.add_field(name="👤 Кандидат", value=candidate_mention, inline=True)
+            log_embed.add_field(name="🔨 Закрыл", value=interaction.user.mention, inline=True)
+            log_embed.add_field(name="📝 Причина", value="Без решения (закрыто администратором)", inline=False)
+            log_embed.add_field(name="⠀", value="━━━━━━━━━━━━━━━━━━━━", inline=False)
+            
+            # ✅ Безопасное копирование полей анкеты
+            if self.application_embed and self.application_embed.fields:
+                for field in self.application_embed.fields:
+                    log_embed.add_field(name=field.name, value=field.value[:1024], inline=field.inline)
+            
+            log_embed.set_footer(text=f"ID пользователя: {self.applicant.id}")
+            
+            # ✅ Безопасная отправка в логи
             if log_channel:
-                log_embed = discord.Embed(
-                    title="🚫 Заявка ЗАКРЫТА",
-                    color=discord.Color.gray(),
-                    timestamp=discord.utils.utcnow()
-                )
-                log_embed.add_field(name="👤 Кандидат", value=self.applicant.mention, inline=True)
-                log_embed.add_field(name="🔨 Закрыл", value=interaction.user.mention, inline=True)
-                log_embed.add_field(name="📝 Причина", value="Без решения (закрыто администратором)", inline=False)
-                log_embed.add_field(name="⠀", value="━━━━━━━━━━━━━━━━━━━━", inline=False)
-                
-                if self.application_embed.fields:
-                    for field in self.application_embed.fields:
-                        log_embed.add_field(name=field.name, value=field.value, inline=field.inline)
-                
-                log_embed.set_footer(text=f"ID пользователя: {self.applicant.id}")
-                if self.application_embed.author:
-                    log_embed.set_author(name=self.application_embed.author.name, icon_url=self.application_embed.author.icon_url)
-                
-                await log_channel.send(embed=log_embed)
+                try:
+                    await log_channel.send(embed=log_embed)
+                except Exception as log_error:
+                    print(f"Не удалось отправить в логи: {log_error}")
             
             await interaction.response.send_message("Заявка закрыта! Канал будет удален через 5 секунд.", ephemeral=True)
             await asyncio.sleep(5)
             await interaction.channel.delete()
+            
         except Exception as e:
             print(f"Ошибка в close_callback: {e}")
-            if not interaction.response.is_done():
-                await interaction.response.send_message("Произошла ошибка при закрытии заявки.", ephemeral=True)
+            print(f"Traceback: {traceback.format_exc()}")
+            # ✅ Даже при ошибке пытаемся удалить канал
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("Произошла ошибка, но канал будет удален.", ephemeral=True)
+                else:
+                    await interaction.followup.send("Произошла ошибка, но канал будет удален.", ephemeral=True)
+                await asyncio.sleep(5)
+                await interaction.channel.delete()
+            except:
+                pass
 
 class ApplicationModal(Modal, title="Анкета в семью"):
     def __init__(self):
