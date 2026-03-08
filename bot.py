@@ -14,7 +14,7 @@ if not TOKEN:
     exit()
 
 # --- КОНФИГУРАЦИЯ ID ---
-CATEGORY_ID = 1451275518740791326  # 🔄 Обновлённый ID категории
+CATEGORY_ID = 1451275518740791326
 LOG_CHANNEL_ID = 1449573243735511153
 VOICE_CHANNEL_ID = 1449567766666416148
 
@@ -42,10 +42,10 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 
 class DeclineReasonModal(Modal, title="Причина отклонения"):
     """Модальное окно для указания причины отклонения"""
-    def __init__(self, applicant: discord.Member, application_message_id: int, interaction: discord.Interaction):
+    def __init__(self, applicant: discord.Member, application_embed: discord.Embed, interaction: discord.Interaction):
         super().__init__()
         self.applicant = applicant
-        self.application_message_id = application_message_id
+        self.application_embed = application_embed
         self.original_interaction = interaction
         
         self.reason_input = TextInput(
@@ -61,33 +61,38 @@ class DeclineReasonModal(Modal, title="Причина отклонения"):
         await self.send_to_logs_with_reason(interaction, self.reason_input.value)
 
     async def send_to_logs_with_reason(self, interaction: discord.Interaction, reason: str):
-        """Отправляет результат с причиной в канал логов"""
+        """Отправляет единый эмбед с результатом и анкетой в канал логов"""
         log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
         if not log_channel:
             return
 
-        try:
-            app_message = await interaction.channel.fetch_message(self.application_message_id)
-            embeds = app_message.embeds
-        except Exception:
-            embeds = []
-
-        # Главный эмбед с результатом
-        result_embed = discord.Embed(title="❌ Заявка ОТКЛОНЕНА", color=discord.Color.red())
-        result_embed.add_field(name="Кандидат", value=self.applicant.mention)
-        result_embed.add_field(name="Обработал", value=interaction.user.mention)
-        result_embed.add_field(name="📝 Причина", value=reason, inline=False)
-        result_embed.set_footer(text=f"ID пользователя: {self.applicant.id}")
-
-        await log_channel.send(embed=result_embed)
+        # Создаем объединённый эмбед
+        log_embed = discord.Embed(
+            title="❌ Заявка ОТКЛОНЕНА",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
         
-        # Отправляем анкету кандидата следом
-        if embeds:
-            for embed in embeds:
-                await asyncio.sleep(0.5)
-                await log_channel.send(embed=embed)
+        # Блок: Информация о решении
+        log_embed.add_field(name="👤 Кандидат", value=self.applicant.mention, inline=True)
+        log_embed.add_field(name="🔨 Обработал", value=interaction.user.mention, inline=True)
+        log_embed.add_field(name="📝 Причина отказа", value=reason, inline=False)
         
-        # Уведомляем кандидата в ЛС (если возможно)
+        # Разделитель
+        log_embed.add_field(name="⠀", value="━━━━━━━━━━━━━━━━━━━━", inline=False)
+        
+        # Блок: Данные анкеты (копируем из оригинала)
+        if self.application_embed.fields:
+            for field in self.application_embed.fields:
+                log_embed.add_field(name=field.name, value=field.value, inline=field.inline)
+        
+        log_embed.set_footer(text=f"ID пользователя: {self.applicant.id}")
+        if self.application_embed.author:
+            log_embed.set_author(name=self.application_embed.author.name, icon_url=self.application_embed.author.icon_url)
+
+        await log_channel.send(embed=log_embed)
+        
+        # Уведомляем кандидата в ЛС
         try:
             await self.applicant.send(
                 f"❌ Ваша заявка в семью была отклонена.\n"
@@ -95,7 +100,7 @@ class DeclineReasonModal(Modal, title="Причина отклонения"):
                 f"Вы можете подать новую заявку через некоторое время, если исправите указанные недостатки."
             )
         except:
-            pass  # ЛС закрыты или бот не может написать
+            pass
 
         await self.original_interaction.followup.send("Заявка отклонена! Канал будет удален через 5 секунд.", ephemeral=True)
         await asyncio.sleep(5)
@@ -103,10 +108,10 @@ class DeclineReasonModal(Modal, title="Причина отклонения"):
 
 
 class TicketButtons(View):
-    def __init__(self, applicant: discord.Member, application_message_id: int):
+    def __init__(self, applicant: discord.Member, application_embed: discord.Embed):
         super().__init__(timeout=None)
         self.applicant = applicant
-        self.application_message_id = application_message_id
+        self.application_embed = application_embed  # Сохраняем эмбед анкеты
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         user_roles = [role.id for role in interaction.user.roles]
@@ -116,27 +121,35 @@ class TicketButtons(View):
         return True
 
     async def send_to_logs(self, interaction: discord.Interaction, status: str, color: discord.Color):
-        """Отправляет результат и анкету в канал логов"""
+        """Отправляет единый эмбед с результатом и анкетой в канал логов"""
         log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
         if not log_channel:
             return
 
-        try:
-            app_message = await interaction.channel.fetch_message(self.application_message_id)
-            embeds = app_message.embeds
-        except Exception:
-            embeds = []
+        # Создаем объединённый эмбед
+        log_embed = discord.Embed(
+            title=f"{status}",
+            color=color,
+            timestamp=discord.utils.utcnow()
+        )
+        
+        # Блок: Информация о решении
+        log_embed.add_field(name="👤 Кандидат", value=self.applicant.mention, inline=True)
+        log_embed.add_field(name="🔨 Обработал", value=interaction.user.mention, inline=True)
+        
+        # Разделитель
+        log_embed.add_field(name="⠀", value="━━━━━━━━━━━━━━━━━━━━", inline=False)
+        
+        # Блок: Данные анкеты (копируем из оригинала)
+        if self.application_embed.fields:
+            for field in self.application_embed.fields:
+                log_embed.add_field(name=field.name, value=field.value, inline=field.inline)
+        
+        log_embed.set_footer(text=f"ID пользователя: {self.applicant.id}")
+        if self.application_embed.author:
+            log_embed.set_author(name=self.application_embed.author.name, icon_url=self.application_embed.author.icon_url)
 
-        result_embed = discord.Embed(title=f"{status}", color=color)
-        result_embed.add_field(name="Кандидат", value=self.applicant.mention)
-        result_embed.add_field(name="Обработал", value=interaction.user.mention)
-        result_embed.set_footer(text=f"ID пользователя: {self.applicant.id}")
-
-        await log_channel.send(embed=result_embed)
-        if embeds:
-            for embed in embeds:
-                await asyncio.sleep(0.5)
-                await log_channel.send(embed=embed)
+        await log_channel.send(embed=log_embed)
 
     @discord.ui.button(label="Принять", style=discord.ButtonStyle.green, custom_id="accept_app")
     async def accept_callback(self, interaction: discord.Interaction, button: Button):
@@ -148,9 +161,9 @@ class TicketButtons(View):
 
     @discord.ui.button(label="Отклонить", style=discord.ButtonStyle.red, custom_id="decline_app")
     async def decline_callback(self, interaction: discord.Interaction, button: Button):
-        # Открываем модальное окно для указания причины
+        # Передаем эмбед анкеты в модальное окно
         await interaction.response.send_modal(
-            DeclineReasonModal(self.applicant, self.application_message_id, interaction)
+            DeclineReasonModal(self.applicant, self.application_embed, interaction)
         )
 
     @discord.ui.button(label="Позвать на собес", style=discord.ButtonStyle.blurple, custom_id="interview_app")
@@ -207,21 +220,24 @@ class ApplicationModal(Modal, title="Анкета в семью"):
                 if role:
                     await new_channel.set_permissions(role, view_channel=True, send_messages=True)
 
-            embed = discord.Embed(title=":file_folder: Новая заявка в семью", color=discord.Color.blue())
-            embed.set_author(name=interaction.user.name, icon_url=interaction.user.avatar.url)
-            embed.add_field(name=":bust_in_silhouette: Информация", value=self.info_field.value, inline=False)
-            embed.add_field(name=":book: Опыт и онлайн", value=self.exp_field.value, inline=False)
-            embed.add_field(name=":family: Прошлые семьи", value=self.prev_families.value or "Не указано", inline=False)
-            embed.add_field(name=":question: Почему мы?", value=self.why_us.value, inline=False)
-            embed.add_field(name=":crossed_swords: Навыки (Видео)", value=self.skills.value or "Не предоставлено", inline=False)
-            embed.set_footer(text=f"ID пользователя: {interaction.user.id}")
+            # Создаем эмбед анкеты
+            app_embed = discord.Embed(title=":file_folder: Анкета кандидата", color=discord.Color.blue())
+            app_embed.set_author(name=interaction.user.name, icon_url=interaction.user.avatar.url)
+            app_embed.add_field(name=":bust_in_silhouette: Информация", value=self.info_field.value, inline=False)
+            app_embed.add_field(name=":book: Опыт и онлайн", value=self.exp_field.value, inline=False)
+            app_embed.add_field(name=":family: Прошлые семьи", value=self.prev_families.value or "Не указано", inline=False)
+            app_embed.add_field(name=":question: Почему мы?", value=self.why_us.value, inline=False)
+            app_embed.add_field(name=":crossed_swords: Навыки (Видео)", value=self.skills.value or "Не предоставлено", inline=False)
+            app_embed.set_footer(text=f"ID пользователя: {interaction.user.id}")
 
             notify_role = interaction.guild.get_role(NOTIFY_ROLE_ID)
             role_mention = notify_role.mention if notify_role else ""
 
-            msg = await new_channel.send(f"{role_mention} Новая заявка от {interaction.user.mention}", embed=embed)
+            # Отправляем анкету в канал заявки
+            msg = await new_channel.send(f"{role_mention} Новая заявка от {interaction.user.mention}", embed=app_embed)
             
-            view = TicketButtons(interaction.user, msg.id)
+            # Передаем эмбед в кнопки (для логов)
+            view = TicketButtons(interaction.user, app_embed)
             await msg.edit(view=view)
             
             await interaction.response.send_message(f"Ваша заявка отправлена! Проверьте канал {new_channel.mention}", ephemeral=True)
