@@ -43,9 +43,9 @@ RENAME_ALLOWED_ROLES = [
 ]
 
 # 🎭 Роли для управления при принятии заявки
-ROLE_ADD_1 = 1449567765798191154  # Роль 1 для выдачи
-ROLE_ADD_2 = 1449575866630934640  # Роль 2 для выдачи
-ROLE_REMOVE = 1449575999850418308  # Роль для удаления
+ROLE_ADD_1 = 1449567765798191154
+ROLE_ADD_2 = 1449575866630934640
+ROLE_REMOVE = 1449575999850418308
 
 # --- НАСТРОЙКИ БОТА ---
 intents = discord.Intents.default()
@@ -57,7 +57,6 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 # --- КЛАССЫ ИНТЕРФЕЙСА (UI) ---
 
 class DeclineReasonModal(Modal, title="Причина отклонения"):
-    """Модальное окно для указания причины отклонения"""
     def __init__(self, applicant: discord.Member, application_embed: discord.Embed, interaction: discord.Interaction):
         super().__init__()
         self.applicant = applicant
@@ -77,27 +76,21 @@ class DeclineReasonModal(Modal, title="Причина отклонения"):
         await self.send_to_logs_with_reason(interaction, self.reason_input.value)
 
     async def send_to_logs_with_reason(self, interaction: discord.Interaction, reason: str):
-        """Отправляет единый эмбед с результатом и анкетой в канал логов"""
         log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
         if not log_channel:
             return
 
-        # Создаем объединённый эмбед
         log_embed = discord.Embed(
             title="❌ Заявка ОТКЛОНЕНА",
             color=discord.Color.red(),
             timestamp=discord.utils.utcnow()
         )
         
-        # Блок: Информация о решении
         log_embed.add_field(name="👤 Кандидат", value=self.applicant.mention, inline=True)
         log_embed.add_field(name="🔨 Обработал", value=interaction.user.mention, inline=True)
         log_embed.add_field(name="📝 Причина отказа", value=reason, inline=False)
-        
-        # Разделитель
         log_embed.add_field(name="⠀", value="━━━━━━━━━━━━━━━━━━━━", inline=False)
         
-        # Блок: Данные анкеты (копируем из оригинала)
         if self.application_embed.fields:
             for field in self.application_embed.fields:
                 log_embed.add_field(name=field.name, value=field.value, inline=field.inline)
@@ -108,7 +101,6 @@ class DeclineReasonModal(Modal, title="Причина отклонения"):
 
         await log_channel.send(embed=log_embed)
         
-        # Уведомляем кандидата в ЛС
         try:
             await self.applicant.send(
                 f"❌ Ваша заявка в семью была отклонена.\n"
@@ -127,14 +119,12 @@ class TicketButtons(View):
     def __init__(self, applicant: discord.Member, application_embed: discord.Embed):
         super().__init__(timeout=None)
         self.applicant = applicant
-        self.application_embed = application_embed  # Сохраняем эмбед анкеты
+        self.application_embed = application_embed
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        # 🛡️ Проверка: владелец бота имеет полный доступ
         if interaction.user.id == OWNER_ID:
             return True
         
-        # Проверка: есть ли у нажавшего одна из админских ролей
         user_roles = [role.id for role in interaction.user.roles]
         if not any(role_id in user_roles for role_id in TICKET_ADMIN_ROLES):
             await interaction.response.send_message("У вас нет прав использовать эти кнопки.", ephemeral=True)
@@ -142,26 +132,20 @@ class TicketButtons(View):
         return True
 
     async def send_to_logs(self, interaction: discord.Interaction, status: str, color: discord.Color):
-        """Отправляет единый эмбед с результатом и анкетой в канал логов"""
         log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
         if not log_channel:
             return
 
-        # Создаем объединённый эмбед
         log_embed = discord.Embed(
             title=f"{status}",
             color=color,
             timestamp=discord.utils.utcnow()
         )
         
-        # Блок: Информация о решении
         log_embed.add_field(name="👤 Кандидат", value=self.applicant.mention, inline=True)
         log_embed.add_field(name="🔨 Обработал", value=interaction.user.mention, inline=True)
-        
-        # Разделитель
         log_embed.add_field(name="⠀", value="━━━━━━━━━━━━━━━━━━━━", inline=False)
         
-        # Блок: Данные анкеты (копируем из оригинала)
         if self.application_embed.fields:
             for field in self.application_embed.fields:
                 log_embed.add_field(name=field.name, value=field.value, inline=field.inline)
@@ -174,45 +158,55 @@ class TicketButtons(View):
 
     @discord.ui.button(label="Принять", style=discord.ButtonStyle.green, custom_id="accept_app")
     async def accept_callback(self, interaction: discord.Interaction, button: Button):
-        await self.send_to_logs(interaction, "✅ Заявка ОДОБРЕНА", discord.Color.green())
-        
-        # 🎭 Управление ролями при принятии
         try:
-            # Выдаём роли
-            role1 = interaction.guild.get_role(ROLE_ADD_1)
-            role2 = interaction.guild.get_role(ROLE_ADD_2)
+            await self.send_to_logs(interaction, "✅ Заявка ОДОБРЕНА", discord.Color.green())
             
-            if role1:
-                await self.applicant.add_roles(role1, reason="Заявка в семью одобрена")
-            if role2:
-                await self.applicant.add_roles(role2, reason="Заявка в семью одобрена")
-            
-            # Удаляем роль
-            role_remove = interaction.guild.get_role(ROLE_REMOVE)
-            if role_remove:
-                await self.applicant.remove_roles(role_remove, reason="Заявка в семью одобрена")
+            try:
+                role1 = interaction.guild.get_role(ROLE_ADD_1)
+                role2 = interaction.guild.get_role(ROLE_ADD_2)
                 
+                if role1:
+                    await self.applicant.add_roles(role1, reason="Заявка в семью одобрена")
+                if role2:
+                    await self.applicant.add_roles(role2, reason="Заявка в семью одобрена")
+                
+                role_remove = interaction.guild.get_role(ROLE_REMOVE)
+                if role_remove:
+                    await self.applicant.remove_roles(role_remove, reason="Заявка в семью одобрена")
+            except Exception as e:
+                print(f"Ошибка при управлении ролями: {e}")
+            
+            await interaction.response.send_message("Заявка принята! Роли выданы. Канал будет удален через 5 секунд.", ephemeral=True)
+            await asyncio.sleep(5)
+            await interaction.channel.delete()
         except Exception as e:
-            print(f"Ошибка при управлении ролями: {e}")
-        
-        await interaction.response.send_message("Заявка принята! Роли выданы. Канал будет удален через 5 секунд.", ephemeral=True)
-        await asyncio.sleep(5)
-        await interaction.channel.delete()
+            print(f"Ошибка в accept_callback: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message("Произошла ошибка при обработке.", ephemeral=True)
 
     @discord.ui.button(label="Отклонить", style=discord.ButtonStyle.red, custom_id="decline_app")
     async def decline_callback(self, interaction: discord.Interaction, button: Button):
-        # Передаем эмбед анкеты в модальное окно
-        await interaction.response.send_modal(
-            DeclineReasonModal(self.applicant, self.application_embed, interaction)
-        )
+        try:
+            await interaction.response.send_modal(
+                DeclineReasonModal(self.applicant, self.application_embed, interaction)
+            )
+        except Exception as e:
+            print(f"Ошибка в decline_callback: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message("Произошла ошибка при обработке.", ephemeral=True)
 
     @discord.ui.button(label="Позвать на собес", style=discord.ButtonStyle.blurple, custom_id="interview_app")
     async def interview_callback(self, interaction: discord.Interaction, button: Button):
-        voice_mention = f"<#{VOICE_CHANNEL_ID}>"
-        await interaction.response.send_message(
-            f"{self.applicant.mention}, Вас вызывают на собеседование! Зайдите в голосовой канал {voice_mention}",
-            ephemeral=False
-        )
+        try:
+            voice_mention = f"<#{VOICE_CHANNEL_ID}>"
+            await interaction.response.send_message(
+                f"{self.applicant.mention}, Вас вызывают на собеседование! Зайдите в голосовой канал {voice_mention}",
+                ephemeral=False
+            )
+        except Exception as e:
+            print(f"Ошибка в interview_callback: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message("Произошла ошибка при обработке.", ephemeral=True)
 
 class ApplicationModal(Modal, title="Анкета в семью"):
     def __init__(self):
@@ -260,28 +254,22 @@ class ApplicationModal(Modal, title="Анкета в семью"):
                 if role:
                     await new_channel.set_permissions(role, view_channel=True, send_messages=True)
 
-            # 📝 Создаем эмбед анкеты с красивыми значениями по умолчанию для пустых полей
             app_embed = discord.Embed(title=":file_folder: Анкета кандидата", color=discord.Color.blue())
             app_embed.set_author(name=interaction.user.name, icon_url=interaction.user.avatar.url)
             
-            # Поле 1: Ник в игре | Статик | Имя и возраст
-            info_value = self.info_field.value if self.info_field.value.strip() else "❌ Не заполнено"
+            info_value = self.info_field.value.strip() if self.info_field.value and self.info_field.value.strip() else "❌ Не заполнено"
             app_embed.add_field(name="Ник в игре | Статик | Имя и возраст", value=info_value, inline=False)
             
-            # Поле 2: Опыт на RP серверах | Ежедневный онлайн
-            exp_value = self.exp_field.value if self.exp_field.value.strip() else "❌ Не заполнено"
+            exp_value = self.exp_field.value.strip() if self.exp_field.value and self.exp_field.value.strip() else "❌ Не заполнено"
             app_embed.add_field(name="Опыт на RP серверах | Ежедневный онлайн", value=exp_value, inline=False)
             
-            # Поле 3: В каких семьях состояли до?
-            prev_value = self.prev_families.value if self.prev_families.value and self.prev_families.value.strip() else "💭 Не состоял(а) в других семьях"
+            prev_value = self.prev_families.value.strip() if self.prev_families.value and self.prev_families.value.strip() else "💭 Не состоял(а) в других семьях"
             app_embed.add_field(name="В каких семьях состояли до?", value=prev_value, inline=False)
             
-            # Поле 4: Почему выбрали именно нас?
-            why_value = self.why_us.value if self.why_us.value.strip() else "❌ Не заполнено"
+            why_value = self.why_us.value.strip() if self.why_us.value and self.why_us.value.strip() else "❌ Не заполнено"
             app_embed.add_field(name="Почему выбрали именно нас?", value=why_value, inline=False)
             
-            # Поле 5: Ваши навыки стрельбы (Видео до 5 минут)
-            skills_value = self.skills.value if self.skills.value and self.skills.value.strip() else "🎬 Не предоставлено (не обязательно)"
+            skills_value = self.skills.value.strip() if self.skills.value and self.skills.value.strip() else "🎬 Не предоставлено (не обязательно)"
             app_embed.add_field(name="Ваши навыки стрельбы (Видео до 5 минут)", value=skills_value, inline=False)
             
             app_embed.set_footer(text=f"ID пользователя: {interaction.user.id}")
@@ -289,10 +277,8 @@ class ApplicationModal(Modal, title="Анкета в семью"):
             notify_role = interaction.guild.get_role(NOTIFY_ROLE_ID)
             role_mention = notify_role.mention if notify_role else ""
 
-            # Отправляем анкету в канал заявки
             msg = await new_channel.send(f"{role_mention} Новая заявка от {interaction.user.mention}", embed=app_embed)
             
-            # Передаем эмбед в кнопки (для логов)
             view = TicketButtons(interaction.user, app_embed)
             await msg.edit(view=view)
             
@@ -310,21 +296,39 @@ class ApplicationModal(Modal, title="Анкета в семью"):
                 await interaction.user.send(f"⚠️ Произошла ошибка при создании заявки:\n```\n{str(e)}\n```")
             except:
                 pass
-                
-            await interaction.response.send_message("Произошла ошибка при создании канала. Администратор был уведомлен.", ephemeral=True)
+            
+            if not interaction.response.is_done():
+                await interaction.response.send_message("Произошла ошибка при создании канала. Администратор был уведомлен.", ephemeral=True)
 
 class StartApplicationButton(View):
+    # ✅ timeout=None чтобы кнопка работала постоянно
+    def __init__(self):
+        super().__init__(timeout=None)
+    
     @discord.ui.button(label="📩 Подать заявку в семью", style=discord.ButtonStyle.green, custom_id="start_app_btn")
     async def button_callback(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_modal(ApplicationModal())
+        try:
+            # ✅ Проверяем, не нажата ли кнопка уже
+            await interaction.response.send_modal(ApplicationModal())
+        except discord.errors.InteractionResponded:
+            # Если уже ответили (редкий случай), игнорируем
+            pass
+        except Exception as e:
+            print(f"Ошибка в button_callback: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message("Произошла ошибка при открытии формы. Попробуйте ещё раз.", ephemeral=True)
 
 # --- КОМАНДЫ БОТА ---
 
 @bot.command(name="заявка")
 async def send_application_embed(ctx):
-    # 🛡️ Проверка: владелец бота имеет полный доступ
+    try:
+        await ctx.message.delete()
+    except:
+        pass
+    
     if ctx.author.id == OWNER_ID:
-        pass  # Пропускаем проверку ролей
+        pass
     else:
         user_roles = [role.id for role in ctx.author.roles]
         if not any(role_id in user_roles for role_id in COMMAND_ALLOWED_ROLES):
@@ -337,7 +341,6 @@ async def send_application_embed(ctx):
         color=discord.Color.gold()
     )
     
-    # 📌 Информация о времени обработки (обновлённый текст)
     embed.add_field(
         name="⏱️ Срок рассмотрения",
         value="Заявки обрабатываются от 2 до 24 часов — всё зависит от того, насколько загружены наши рекрутеры на данный момент.",
@@ -352,26 +355,19 @@ async def send_application_embed(ctx):
 
 @bot.command(name="rename")
 async def rename_user_prefix(ctx, member: discord.Member, *, new_nickname: str):
-    """
-    Команда для изменения никнейма пользователя на сервере.
-    Использование: !rename @user НовыйНик
-    """
+    try:
+        await ctx.message.delete()
+    except:
+        pass
+    
     await rename_user_logic(ctx, member, new_nickname, is_slash=False)
 
 @bot.tree.command(name="rename", description="Изменить никнейм пользователя на сервере")
 @app_commands.describe(member="Пользователь, которому изменить никнейм", new_nickname="Новый никнейм (макс. 32 символа)")
 async def rename_user_slash(interaction: discord.Interaction, member: discord.Member, new_nickname: str):
-    """
-    Слэш-команда для изменения никнейма пользователя на сервере.
-    Использование: /rename @user НовыйНик
-    """
     await rename_user_logic(interaction, member, new_nickname, is_slash=True)
 
 async def rename_user_logic(ctx_or_interaction, member: discord.Member, new_nickname: str, is_slash: bool = False):
-    """
-    Общая логика для обеих команд rename
-    """
-    # Определяем автора и метод ответа
     if is_slash:
         author = ctx_or_interaction.user
         response_method = ctx_or_interaction.response.send_message
@@ -379,17 +375,14 @@ async def rename_user_logic(ctx_or_interaction, member: discord.Member, new_nick
         author = ctx_or_interaction.author
         response_method = ctx_or_interaction.send
     
-    # 🛡️ Проверка: владелец бота имеет полный доступ
     if author.id == OWNER_ID:
-        pass  # Пропускаем проверку ролей
+        pass
     else:
-        # Проверка: есть ли у пользователя одна из разрешённых ролей
         user_roles = [role.id for role in author.roles]
         if not any(role_id in user_roles for role_id in RENAME_ALLOWED_ROLES):
             await response_method("❌ У вас нет прав использовать эту команду.", ephemeral=True)
             return
     
-    # Проверка: не пытается ли пользователь изменить никнейм владельца сервера или бота
     if member == ctx_or_interaction.guild.owner:
         await response_method("❌ Нельзя изменить никнейм владельца сервера.", ephemeral=True)
         return
@@ -398,16 +391,13 @@ async def rename_user_logic(ctx_or_interaction, member: discord.Member, new_nick
         await response_method("❌ Нельзя изменить никнейм самого бота этой командой.", ephemeral=True)
         return
     
-    # Проверка: не превышает ли новый никнейм лимит (32 символа)
     if len(new_nickname) > 32:
         await response_method("❌ Никнейм не может быть длиннее 32 символов.", ephemeral=True)
         return
     
     try:
-        # Изменяем никнейм
         await member.edit(nick=new_nickname)
         
-        # Создаем эмбед с подтверждением
         embed = discord.Embed(
             title="✅ Никнейм изменён",
             color=discord.Color.green(),
@@ -437,7 +427,6 @@ async def on_ready():
     print(f'Роль для выдачи 2: {ROLE_ADD_2}')
     print(f'Роль для удаления: {ROLE_REMOVE}')
     
-    # Синхронизация слэш-команд
     try:
         synced = await bot.tree.sync()
         print(f'Синхронизировано {len(synced)} слэш-команд')
