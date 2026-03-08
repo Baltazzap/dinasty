@@ -3,6 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 from discord.ui import Button, View, Modal, TextInput
 import os
+import traceback
 
 # Получение токена из переменной окружения DISCORD_TOKEN
 TOKEN = os.getenv('DISCORD_TOKEN')
@@ -12,17 +13,12 @@ if not TOKEN:
     exit()
 
 # --- КОНФИГУРАЦИЯ ID ---
-# Категория для создания тикетов
 CATEGORY_ID = 1449573036712919050
-# Канал для логов (принято/отклонено)
 LOG_CHANNEL_ID = 1449573243735511153
-# Голосовой канал для собеседования
 VOICE_CHANNEL_ID = 1449567766666416148
 
-# Роли, которые могут использовать команду !заявка
 COMMAND_ALLOWED_ROLES = [1449567765844459572]
 
-# Роли, которые могут нажимать кнопки в тикете (Администрация)
 TICKET_ADMIN_ROLES = [
     1449567765810778202,
     1449567765810778205,
@@ -39,7 +35,6 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 # --- КЛАССЫ ИНТЕРФЕЙСА (UI) ---
 
 class TicketButtons(View):
-    """Кнопки внутри созданного тикета (Принять/Отклонить/Собес)"""
     def __init__(self, applicant: discord.Member):
         super().__init__(timeout=None)
         self.applicant = applicant
@@ -84,49 +79,15 @@ class TicketButtons(View):
         )
 
 class ApplicationModal(Modal, title="Анкета в семью"):
-    """Форма заполнения заявки (5 полей - лимит Discord)"""
     def __init__(self):
         super().__init__()
         
-        # Поле 1: Основная информация (объединено)
-        self.info_field = TextInput(
-            label="Ник в игре | Статик | Имя и возраст", 
-            placeholder="Например: Player123 | PC | Иван, 20 лет", 
-            max_length=100
-        )
-        
-        # Поле 2: Опыт и онлайн (объединено)
-        self.exp_field = TextInput(
-            label="Опыт на RP серверах | Ежедневный онлайн", 
-            placeholder="Опыт: 1 год | Онлайн: 4 часа в день", 
-            style=discord.TextStyle.long,
-            max_length=500
-        )
-        
-        # Поле 3: Прошлые семьи
-        self.prev_families = TextInput(
-            label="В каких семьях состояли до?", 
-            style=discord.TextStyle.long, 
-            max_length=1000, 
-            required=False
-        )
-        
-        # Поле 4: Мотивация
-        self.why_us = TextInput(
-            label="Почему выбрали именно нас?", 
-            style=discord.TextStyle.long, 
-            max_length=1000
-        )
-        
-        # Поле 5: Навыки
-        self.skills = TextInput(
-            label="Ваши навыки стрельбы (Видео до 5 минут)", 
-            placeholder="Ссылка на видео", 
-            max_length=500, 
-            required=False
-        )
+        self.info_field = TextInput(label="Ник в игре | Статик | Имя и возраст", placeholder="Например: Player123 | PC | Иван, 20 лет", max_length=100)
+        self.exp_field = TextInput(label="Опыт на RP серверах | Ежедневный онлайн", placeholder="Опыт: 1 год | Онлайн: 4 часа в день", style=discord.TextStyle.long, max_length=500)
+        self.prev_families = TextInput(label="В каких семьях состояли до?", style=discord.TextStyle.long, max_length=1000, required=False)
+        self.why_us = TextInput(label="Почему выбрали именно нас?", style=discord.TextStyle.long, max_length=1000)
+        self.skills = TextInput(label="Ваши навыки стрельбы (Видео до 5 минут)", placeholder="Ссылка на видео", max_length=500, required=False)
 
-        # Добавляем ровно 5 полей
         self.add_item(self.info_field)
         self.add_item(self.exp_field)
         self.add_item(self.prev_families)
@@ -134,13 +95,24 @@ class ApplicationModal(Modal, title="Анкета в семью"):
         self.add_item(self.skills)
 
     async def on_submit(self, interaction: discord.Interaction):
-        category = interaction.guild.get_channel(CATEGORY_ID)
-        if not category:
-            await interaction.response.send_message("Ошибка: Категория для заявок не найдена.", ephemeral=True)
-            return
-
-        channel_name = f"заявка-{interaction.user.name}"
         try:
+            category = interaction.guild.get_channel(CATEGORY_ID)
+            
+            # Проверка существования категории
+            if not category:
+                print(f"ОШИБКА: Категория {CATEGORY_ID} не найдена!")
+                await interaction.response.send_message("Ошибка: Категория для заявок не найдена. Обратитесь к администратору.", ephemeral=True)
+                return
+
+            # Проверка типа канала
+            if not isinstance(category, discord.CategoryChannel):
+                print(f"ОШИБКА: Канал {CATEGORY_ID} не является категорией!")
+                await interaction.response.send_message("Ошибка: Указанный ID не является категорией.", ephemeral=True)
+                return
+
+            channel_name = f"заявка-{interaction.user.name}"
+            
+            # Создание канала
             new_channel = await category.create_text_channel(
                 name=channel_name,
                 reason="Создание заявки в семью",
@@ -156,7 +128,7 @@ class ApplicationModal(Modal, title="Анкета в семью"):
                 if role:
                     await new_channel.set_permission(role, view_channel=True, send_messages=True)
 
-            # Эмбед с данными анкеты
+            # Эмбед с данными
             embed = discord.Embed(title=":file_folder: Новая заявка в семью", color=discord.Color.blue())
             embed.set_author(name=interaction.user.name, icon_url=interaction.user.avatar.url)
             embed.add_field(name=":bust_in_silhouette: Информация", value=self.info_field.value, inline=False)
@@ -171,11 +143,23 @@ class ApplicationModal(Modal, title="Анкета в семью"):
             await interaction.response.send_message(f"Ваша заявка отправлена! Проверьте канал {new_channel.mention}", ephemeral=True)
 
         except Exception as e:
-            print(f"Ошибка создания канала: {e}")
-            await interaction.response.send_message("Произошла ошибка при создании канала.", ephemeral=True)
+            # Детальное логирование ошибки
+            error_trace = traceback.format_exc()
+            print(f"=== ОШИБКА ПРИ СОЗДАНИИ КАНАЛА ===")
+            print(f"Пользователь: {interaction.user.name} ({interaction.user.id})")
+            print(f"Ошибка: {e}")
+            print(f"Traceback:\n{error_trace}")
+            print(f"=================================")
+            
+            # Отправка информации об ошибке создателю заявки
+            try:
+                await interaction.user.send(f"⚠️ Произошла ошибка при создании заявки:\n```\n{str(e)}\n```")
+            except:
+                pass
+                
+            await interaction.response.send_message("Произошла ошибка при создании канала. Администратор был уведомлен.", ephemeral=True)
 
 class StartApplicationButton(View):
-    """Кнопка на стартовом сообщении"""
     @discord.ui.button(label="Подать заявку в семью", style=discord.ButtonStyle.green, custom_id="start_app_btn")
     async def button_callback(self, interaction: discord.Interaction, button: Button):
         await interaction.response.send_modal(ApplicationModal())
@@ -205,6 +189,8 @@ async def send_application_embed(ctx):
 @bot.event
 async def on_ready():
     print(f'Бот запущен как {bot.user}')
+    print(f'Категория заявок: {CATEGORY_ID}')
+    print(f'Канал логов: {LOG_CHANNEL_ID}')
 
 # Запуск бота
 bot.run(TOKEN)
