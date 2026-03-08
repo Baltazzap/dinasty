@@ -28,7 +28,7 @@ TICKET_ADMIN_ROLES = [
     1449567765810778202,
     1449567765810778205,
     1449567765810778210,
-    1449567765810778211  # Добавлена новая роль
+    1449567765810778211
 ]
 
 # --- НАСТРОЙКИ БОТА ---
@@ -138,19 +138,14 @@ class ApplicationModal(Modal, title="Анкета в семью"):
                 topic=f"Заявка от {interaction.user.name}"
             )
             
-            # Скрываем канал от всех по умолчанию
             await new_channel.set_permissions(interaction.guild.default_role, view_channel=False)
-            
-            # Даем доступ автору заявки
             await new_channel.set_permissions(interaction.user, view_channel=True, send_messages=True)
             
-            # Даем доступ всем админским ролям (включая новую 1449567765810778211)
             for role_id in TICKET_ADMIN_ROLES:
                 role = interaction.guild.get_role(role_id)
                 if role:
                     await new_channel.set_permissions(role, view_channel=True, send_messages=True)
 
-            # Формируем эмбед с данными анкеты
             embed = discord.Embed(title=":file_folder: Новая заявка в семью", color=discord.Color.blue())
             embed.set_author(name=interaction.user.name, icon_url=interaction.user.avatar.url)
             embed.add_field(name=":bust_in_silhouette: Информация", value=self.info_field.value, inline=False)
@@ -160,14 +155,11 @@ class ApplicationModal(Modal, title="Анкета в семью"):
             embed.add_field(name=":crossed_swords: Навыки (Видео)", value=self.skills.value or "Не предоставлено", inline=False)
             embed.set_footer(text=f"ID пользователя: {interaction.user.id}")
 
-            # Упоминание роли при создании заявки
             notify_role = interaction.guild.get_role(NOTIFY_ROLE_ID)
             role_mention = notify_role.mention if notify_role else ""
 
-            # Отправляем сообщение и сохраняем его ID
             msg = await new_channel.send(f"{role_mention} Новая заявка от {interaction.user.mention}", embed=embed)
             
-            # Передаем ID сообщения в кнопки
             view = TicketButtons(interaction.user, msg.id)
             await msg.edit(view=view)
             
@@ -203,7 +195,7 @@ async def send_application_embed(ctx):
         return
 
     embed = discord.Embed(
-        title=":hello: Путь в семью начинается здесь!",
+        title="🤝 Путь в семью начинается здесь!",  # 🤝 вместо :hello:
         description=(
             "После заполнения анкеты Вам придет оповещение в ЛС от бота с результатом.\n"
             "Обычно заявки обрабатываются в течение 2–7 дней — всё зависит от того, "
@@ -211,6 +203,12 @@ async def send_application_embed(ctx):
         ),
         color=discord.Color.gold()
     )
+    
+    # 🖼️ Картинка внизу (большая)
+    embed.set_image(url="https://i.imgur.com/bRqv7WM.jpeg")
+    
+    # 🖼️ Аватарка в углу (справа сверху)
+    embed.set_thumbnail(url="https://i.imgur.com/kJy80lj.png")
     
     view = StartApplicationButton()
     await ctx.send(embed=embed, view=view)
