@@ -4,6 +4,7 @@ from discord.ext import commands
 from discord.ui import Button, View, Modal, TextInput
 import os
 import traceback
+import asyncio
 
 # Получение токена из переменной окружения DISCORD_TOKEN
 TOKEN = os.getenv('DISCORD_TOKEN')
@@ -17,12 +18,17 @@ CATEGORY_ID = 1449573036712919050
 LOG_CHANNEL_ID = 1449573243735511153
 VOICE_CHANNEL_ID = 1449567766666416148
 
+# Роль для упоминания при новой заявке
+NOTIFY_ROLE_ID = 1449567765810778202
+
 COMMAND_ALLOWED_ROLES = [1449567765844459572]
 
+# Роли, которые могут нажимать кнопки в тикете (Администрация)
 TICKET_ADMIN_ROLES = [
     1449567765810778202,
     1449567765810778205,
-    1449567765810778210
+    1449567765810778210,
+    1449567765810778211  # Добавлена новая роль
 ]
 
 # --- НАСТРОЙКИ БОТА ---
@@ -35,9 +41,10 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 # --- КЛАССЫ ИНТЕРФЕЙСА (UI) ---
 
 class TicketButtons(View):
-    def __init__(self, applicant: discord.Member):
+    def __init__(self, applicant: discord.Member, application_message_id: int):
         super().__init__(timeout=None)
         self.applicant = applicant
+        self.application_message_id = application_message_id
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         user_roles = [role.id for role in interaction.user.roles]
@@ -46,29 +53,44 @@ class TicketButtons(View):
             return False
         return True
 
+    async def send_to_logs(self, interaction: discord.Interaction, status: str, color: discord.Color):
+        """Отправляет результат и анкету в канал логов"""
+        log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
+        if not log_channel:
+            return
+
+        try:
+            app_message = await interaction.channel.fetch_message(self.application_message_id)
+            embeds = app_message.embeds
+        except Exception:
+            embeds = []
+
+        result_embed = discord.Embed(title=f"{status}", color=color)
+        result_embed.add_field(name="Кандидат", value=self.applicant.mention)
+        result_embed.add_field(name="Обработал", value=interaction.user.mention)
+        result_embed.set_footer(text=f"ID пользователя: {self.applicant.id}")
+
+        await log_channel.send(embed=result_embed)
+        if embeds:
+            for embed in embeds:
+                await asyncio.sleep(0.5)
+                await log_channel.send(embed=embed)
+
     @discord.ui.button(label="Принять", style=discord.ButtonStyle.green, custom_id="accept_app")
     async def accept_callback(self, interaction: discord.Interaction, button: Button):
-        log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
-        if log_channel:
-            embed = discord.Embed(title="✅ Заявка ОДОБРЕНА", color=discord.Color.green())
-            embed.add_field(name="Кандидат", value=self.applicant.mention)
-            embed.add_field(name="Обработал", value=interaction.user.mention)
-            await log_channel.send(embed=embed)
+        await self.send_to_logs(interaction, "✅ Заявка ОДОБРЕНА", discord.Color.green())
         
         await interaction.response.send_message("Заявка принята! Канал будет удален через 5 секунд.", ephemeral=True)
-        await interaction.channel.delete(delay=5)
+        await asyncio.sleep(5)
+        await interaction.channel.delete()
 
     @discord.ui.button(label="Отклонить", style=discord.ButtonStyle.red, custom_id="decline_app")
     async def decline_callback(self, interaction: discord.Interaction, button: Button):
-        log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
-        if log_channel:
-            embed = discord.Embed(title="❌ Заявка ОТКЛОНЕНА", color=discord.Color.red())
-            embed.add_field(name="Кандидат", value=self.applicant.mention)
-            embed.add_field(name="Обработал", value=interaction.user.mention)
-            await log_channel.send(embed=embed)
+        await self.send_to_logs(interaction, "❌ Заявка ОТКЛОНЕНА", discord.Color.red())
 
         await interaction.response.send_message("Заявка отклонена! Канал будет удален через 5 секунд.", ephemeral=True)
-        await interaction.channel.delete(delay=5)
+        await asyncio.sleep(5)
+        await interaction.channel.delete()
 
     @discord.ui.button(label="Позвать на собес", style=discord.ButtonStyle.blurple, custom_id="interview_app")
     async def interview_callback(self, interaction: discord.Interaction, button: Button):
@@ -116,15 +138,19 @@ class ApplicationModal(Modal, title="Анкета в семью"):
                 topic=f"Заявка от {interaction.user.name}"
             )
             
-            # ИСПРАВЛЕНО: set_permission -> set_permissions
+            # Скрываем канал от всех по умолчанию
             await new_channel.set_permissions(interaction.guild.default_role, view_channel=False)
+            
+            # Даем доступ автору заявки
             await new_channel.set_permissions(interaction.user, view_channel=True, send_messages=True)
             
+            # Даем доступ всем админским ролям (включая новую 1449567765810778211)
             for role_id in TICKET_ADMIN_ROLES:
                 role = interaction.guild.get_role(role_id)
                 if role:
                     await new_channel.set_permissions(role, view_channel=True, send_messages=True)
 
+            # Формируем эмбед с данными анкеты
             embed = discord.Embed(title=":file_folder: Новая заявка в семью", color=discord.Color.blue())
             embed.set_author(name=interaction.user.name, icon_url=interaction.user.avatar.url)
             embed.add_field(name=":bust_in_silhouette: Информация", value=self.info_field.value, inline=False)
@@ -134,7 +160,16 @@ class ApplicationModal(Modal, title="Анкета в семью"):
             embed.add_field(name=":crossed_swords: Навыки (Видео)", value=self.skills.value or "Не предоставлено", inline=False)
             embed.set_footer(text=f"ID пользователя: {interaction.user.id}")
 
-            await new_channel.send(f"Заявка от {interaction.user.mention}", embed=embed, view=TicketButtons(interaction.user))
+            # Упоминание роли при создании заявки
+            notify_role = interaction.guild.get_role(NOTIFY_ROLE_ID)
+            role_mention = notify_role.mention if notify_role else ""
+
+            # Отправляем сообщение и сохраняем его ID
+            msg = await new_channel.send(f"{role_mention} Новая заявка от {interaction.user.mention}", embed=embed)
+            
+            # Передаем ID сообщения в кнопки
+            view = TicketButtons(interaction.user, msg.id)
+            await msg.edit(view=view)
             
             await interaction.response.send_message(f"Ваша заявка отправлена! Проверьте канал {new_channel.mention}", ephemeral=True)
 
@@ -185,6 +220,7 @@ async def on_ready():
     print(f'Бот запущен как {bot.user}')
     print(f'Категория заявок: {CATEGORY_ID}')
     print(f'Канал логов: {LOG_CHANNEL_ID}')
+    print(f'Роль для уведомлений: {NOTIFY_ROLE_ID}')
 
 # Запуск бота
 bot.run(TOKEN)
