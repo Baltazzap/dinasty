@@ -18,6 +18,9 @@ CATEGORY_ID = 1451275518740791326
 LOG_CHANNEL_ID = 1449573243735511153
 VOICE_CHANNEL_ID = 1449567766666416148
 
+# 📁 Категория для личных веток
+PRIVATE_CHANNEL_CATEGORY_ID = 1449567768524623972
+
 # Роль для упоминания при новой заявке
 NOTIFY_ROLE_ID = 1449567765810778202
 
@@ -34,8 +37,8 @@ TICKET_ADMIN_ROLES = [
     1449567765810778211
 ]
 
-# 🛠️ Роли, которые могут использовать команду !rename
-RENAME_ALLOWED_ROLES = [
+# 🛠️ Роли, которые могут использовать команду !rename и !ветка
+ADMIN_ROLES = [
     1449567765810778202,
     1449567765810778205,
     1449567765810778210,
@@ -46,6 +49,13 @@ RENAME_ALLOWED_ROLES = [
 ROLE_ADD_1 = 1449567765798191154
 ROLE_ADD_2 = 1449575866630934640
 ROLE_REMOVE = 1449575999850418308
+
+# 🔒 Роли, которые могут видеть личные ветки
+PRIVATE_CHANNEL_VISIBLE_ROLES = [
+    1449567765810778211,
+    1449567765810778210,
+    1449567765810778205
+]
 
 # --- НАСТРОЙКИ БОТА ---
 intents = discord.Intents.default()
@@ -208,20 +218,17 @@ class TicketButtons(View):
             if not interaction.response.is_done():
                 await interaction.response.send_message("Произошла ошибка при обработке.", ephemeral=True)
 
-    # 🚫 Кнопка: Закрыть заявку (ИСПРАВЛЕНО)
     @discord.ui.button(label="Закрыть заявку", style=discord.ButtonStyle.gray, custom_id="close_ticket")
     async def close_callback(self, interaction: discord.Interaction, button: Button):
         try:
             log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
             
-            # Создаем базовый эмбед
             log_embed = discord.Embed(
                 title="🚫 Заявка ЗАКРЫТА",
                 color=discord.Color.gray(),
                 timestamp=discord.utils.utcnow()
             )
             
-            # ✅ Безопасное упоминание кандидата (даже если он покинул сервер)
             try:
                 candidate_mention = self.applicant.mention
             except:
@@ -232,14 +239,12 @@ class TicketButtons(View):
             log_embed.add_field(name="📝 Причина", value="Без решения (закрыто администратором)", inline=False)
             log_embed.add_field(name="⠀", value="━━━━━━━━━━━━━━━━━━━━", inline=False)
             
-            # ✅ Безопасное копирование полей анкеты
             if self.application_embed and self.application_embed.fields:
                 for field in self.application_embed.fields:
                     log_embed.add_field(name=field.name, value=field.value[:1024], inline=field.inline)
             
             log_embed.set_footer(text=f"ID пользователя: {self.applicant.id}")
             
-            # ✅ Безопасная отправка в логи
             if log_channel:
                 try:
                     await log_channel.send(embed=log_embed)
@@ -253,7 +258,6 @@ class TicketButtons(View):
         except Exception as e:
             print(f"Ошибка в close_callback: {e}")
             print(f"Traceback: {traceback.format_exc()}")
-            # ✅ Даже при ошибке пытаемся удалить канал
             try:
                 if not interaction.response.is_done():
                     await interaction.response.send_message("Произошла ошибка, но канал будет удален.", ephemeral=True)
@@ -263,6 +267,69 @@ class TicketButtons(View):
                 await interaction.channel.delete()
             except:
                 pass
+
+
+class PrivateChannelButtons(View):
+    """Кнопки для управления личной веткой"""
+    def __init__(self):
+        super().__init__(timeout=None)
+    
+    @discord.ui.button(label="🔒 Создать личную ветку", style=discord.ButtonStyle.blurple, custom_id="create_private_channel")
+    async def create_channel_callback(self, interaction: discord.Interaction, button: Button):
+        try:
+            category = interaction.guild.get_channel(PRIVATE_CHANNEL_CATEGORY_ID)
+            
+            if not category:
+                await interaction.response.send_message("❌ Категория для личных веток не найдена.", ephemeral=True)
+                return
+            
+            if not isinstance(category, discord.CategoryChannel):
+                await interaction.response.send_message("❌ Указанный ID не является категорией.", ephemeral=True)
+                return
+            
+            channel_name = f"ветка-{interaction.user.name}"
+            
+            new_channel = await category.create_text_channel(
+                name=channel_name,
+                reason="Создание личной ветки",
+                topic=f"Личная ветка от {interaction.user.name}"
+            )
+            
+            # Скрываем от всех по умолчанию
+            await new_channel.set_permissions(interaction.guild.default_role, view_channel=False, send_messages=False)
+            
+            # Даем доступ автору
+            await new_channel.set_permissions(interaction.user, view_channel=True, send_messages=True)
+            
+            # Даем доступ админским ролям
+            for role_id in PRIVATE_CHANNEL_VISIBLE_ROLES:
+                role = interaction.guild.get_role(role_id)
+                if role:
+                    await new_channel.set_permissions(role, view_channel=True, send_messages=True)
+            
+            # Отправляем приветственное сообщение
+            embed = discord.Embed(
+                title="🔒 Личная ветка создана",
+                description=f"Добро пожаловать в вашу личную ветку, {interaction.user.mention}!\n\nЭтот канал виден только вам и администрации.",
+                color=discord.Color.blurple()
+            )
+            embed.add_field(name="👤 Владелец", value=interaction.user.mention, inline=True)
+            embed.add_field(name="📁 Категория", value=category.mention, inline=True)
+            embed.set_footer(text=f"ID канала: {new_channel.id}")
+            
+            await new_channel.send(embed=embed)
+            
+            await interaction.response.send_message(
+                f"✅ Ваша личная ветка создана: {new_channel.mention}",
+                ephemeral=True
+            )
+            
+        except Exception as e:
+            print(f"Ошибка при создании личной ветки: {e}")
+            print(f"Traceback: {traceback.format_exc()}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"❌ Произошла ошибка при создании ветки: `{str(e)}`", ephemeral=True)
+
 
 class ApplicationModal(Modal, title="Анкета в семью"):
     def __init__(self):
@@ -435,6 +502,67 @@ async def send_application_embed(ctx):
     view = StartApplicationButton()
     await ctx.send(embed=embed, view=view)
 
+@bot.command(name="ветка")
+async def private_channel_command(ctx):
+    """
+    Команда для создания эмбеда с кнопкой создания личной ветки.
+    Использование: !ветка
+    """
+    try:
+        await ctx.message.delete()
+    except:
+        pass
+    
+    # 🛡️ Проверка: владелец бота имеет полный доступ
+    if ctx.author.id == OWNER_ID:
+        pass
+    else:
+        # Проверка: есть ли у пользователя одна из админских ролей
+        user_roles = [role.id for role in ctx.author.roles]
+        if not any(role_id in user_roles for role_id in ADMIN_ROLES):
+            await ctx.send("❌ У вас нет прав использовать эту команду.", ephemeral=True)
+            return
+    
+    embed = discord.Embed(
+        title="🔒 Личная ветка",
+        description="Нажмите на кнопку ниже, чтобы создать свою личную ветку.\n\nВ этой ветке сможете писать только вы и администрация сервера.",
+        color=discord.Color.blurple()
+    )
+    embed.add_field(name="📁 Категория", value=f"<#{PRIVATE_CHANNEL_CATEGORY_ID}>", inline=True)
+    embed.add_field(name="👥 Доступ", value="Только вы и администрация", inline=True)
+    embed.set_footer(text="Личные ветки создаются автоматически")
+    
+    view = PrivateChannelButtons()
+    await ctx.send(embed=embed, view=view)
+
+@bot.tree.command(name="ветка", description="Создать эмбед для создания личной ветки")
+async def private_channel_slash(interaction: discord.Interaction):
+    """
+    Слэш-команда для создания эмбеда с кнопкой создания личной ветки.
+    Использование: /ветка
+    """
+    # 🛡️ Проверка: владелец бота имеет полный доступ
+    if interaction.user.id == OWNER_ID:
+        pass
+    else:
+        # Проверка: есть ли у пользователя одна из админских ролей
+        user_roles = [role.id for role in interaction.user.roles]
+        if not any(role_id in user_roles for role_id in ADMIN_ROLES):
+            await interaction.response.send_message("❌ У вас нет прав использовать эту команду.", ephemeral=True)
+            return
+    
+    embed = discord.Embed(
+        title="🔒 Личная ветка",
+        description="Нажмите на кнопку ниже, чтобы создать свою личную ветку.\n\nВ этой ветке сможете писать только вы и администрация сервера.",
+        color=discord.Color.blurple()
+    )
+    embed.add_field(name="📁 Категория", value=f"<#{PRIVATE_CHANNEL_CATEGORY_ID}>", inline=True)
+    embed.add_field(name="👥 Доступ", value="Только вы и администрация", inline=True)
+    embed.set_footer(text="Личные ветки создаются автоматически")
+    
+    view = PrivateChannelButtons()
+    await interaction.response.send_message(embed=embed, view=view)
+
 @bot.command(name="rename")
 async def rename_user_prefix(ctx, member: discord.Member, *, new_nickname: str):
     try:
@@ -461,7 +589,7 @@ async def rename_user_logic(ctx_or_interaction, member: discord.Member, new_nick
         pass
     else:
         user_roles = [role.id for role in author.roles]
-        if not any(role_id in user_roles for role_id in RENAME_ALLOWED_ROLES):
+        if not any(role_id in user_roles for role_id in ADMIN_ROLES):
             await response_method("❌ У вас нет прав использовать эту команду.", ephemeral=True)
             return
     
@@ -502,6 +630,7 @@ async def rename_user_logic(ctx_or_interaction, member: discord.Member, new_nick
 async def on_ready():
     print(f'Бот запущен как {bot.user}')
     print(f'Категория заявок: {CATEGORY_ID}')
+    print(f'Категория личных веток: {PRIVATE_CHANNEL_CATEGORY_ID}')
     print(f'Канал логов: {LOG_CHANNEL_ID}')
     print(f'Роль для уведомлений: {NOTIFY_ROLE_ID}')
     print(f'Владелец бота (полный доступ): {OWNER_ID}')
