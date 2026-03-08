@@ -208,18 +208,51 @@ class TicketButtons(View):
             if not interaction.response.is_done():
                 await interaction.response.send_message("Произошла ошибка при обработке.", ephemeral=True)
 
+    # 🚫 Новая кнопка: Закрыть заявку
+    @discord.ui.button(label="Закрыть заявку", style=discord.ButtonStyle.gray, custom_id="close_ticket")
+    async def close_callback(self, interaction: discord.Interaction, button: Button):
+        try:
+            # Отправляем в логи информацию о закрытии
+            log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
+            if log_channel:
+                log_embed = discord.Embed(
+                    title="🚫 Заявка ЗАКРЫТА",
+                    color=discord.Color.gray(),
+                    timestamp=discord.utils.utcnow()
+                )
+                log_embed.add_field(name="👤 Кандидат", value=self.applicant.mention, inline=True)
+                log_embed.add_field(name="🔨 Закрыл", value=interaction.user.mention, inline=True)
+                log_embed.add_field(name="📝 Причина", value="Без решения (закрыто администратором)", inline=False)
+                log_embed.add_field(name="⠀", value="━━━━━━━━━━━━━━━━━━━━", inline=False)
+                
+                if self.application_embed.fields:
+                    for field in self.application_embed.fields:
+                        log_embed.add_field(name=field.name, value=field.value, inline=field.inline)
+                
+                log_embed.set_footer(text=f"ID пользователя: {self.applicant.id}")
+                if self.application_embed.author:
+                    log_embed.set_author(name=self.application_embed.author.name, icon_url=self.application_embed.author.icon_url)
+                
+                await log_channel.send(embed=log_embed)
+            
+            await interaction.response.send_message("Заявка закрыта! Канал будет удален через 5 секунд.", ephemeral=True)
+            await asyncio.sleep(5)
+            await interaction.channel.delete()
+        except Exception as e:
+            print(f"Ошибка в close_callback: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message("Произошла ошибка при закрытии заявки.", ephemeral=True)
+
 class ApplicationModal(Modal, title="Анкета в семью"):
     def __init__(self):
         super().__init__()
         
-        # Поле 1: Ник в игре | Статик | Имя и возраст
         self.info_field = TextInput(
             label="Ник в игре | Статик | Имя и возраст",
             placeholder="Например: Player123 | PC | Иван, 20 лет",
             max_length=100
         )
         
-        # Поле 2: Опыт на RP серверах | Ежедневный онлайн
         self.exp_field = TextInput(
             label="Опыт на RP серверах | Ежедневный онлайн",
             placeholder="Например: 1 год | 4 часа в день",
@@ -227,7 +260,6 @@ class ApplicationModal(Modal, title="Анкета в семью"):
             max_length=500
         )
         
-        # Поле 3: В каких семьях состояли до? (с новым placeholder)
         self.prev_families = TextInput(
             label="В каких семьях состояли до?",
             placeholder="(По какой причине покинули?)",
@@ -236,7 +268,6 @@ class ApplicationModal(Modal, title="Анкета в семью"):
             required=False
         )
         
-        # Поле 4: Почему выбрали именно нас? (с новым placeholder)
         self.why_us = TextInput(
             label="Почему выбрали именно нас?",
             placeholder="(Какую пользу сможете принести нашей семье?)",
@@ -244,7 +275,6 @@ class ApplicationModal(Modal, title="Анкета в семью"):
             max_length=1000
         )
         
-        # Поле 5: Ваши навыки стрельбы (с новым placeholder)
         self.skills = TextInput(
             label="Ваши навыки стрельбы (Видео до 5 минут)",
             placeholder="(Видео откат с любого МП, файта, арены)",
