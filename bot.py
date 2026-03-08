@@ -260,14 +260,30 @@ class ApplicationModal(Modal, title="Анкета в семью"):
                 if role:
                     await new_channel.set_permissions(role, view_channel=True, send_messages=True)
 
-            # 📝 Создаем эмбед анкеты с теми же названиями полей, что и в модальном окне
+            # 📝 Создаем эмбед анкеты с красивыми значениями по умолчанию для пустых полей
             app_embed = discord.Embed(title=":file_folder: Анкета кандидата", color=discord.Color.blue())
             app_embed.set_author(name=interaction.user.name, icon_url=interaction.user.avatar.url)
-            app_embed.add_field(name="Ник в игре | Статик | Имя и возраст", value=self.info_field.value, inline=False)
-            app_embed.add_field(name="Опыт на RP серверах | Ежедневный онлайн", value=self.exp_field.value, inline=False)
-            app_embed.add_field(name="В каких семьях состояли до?", value=self.prev_families.value or "Не указано", inline=False)
-            app_embed.add_field(name="Почему выбрали именно нас?", value=self.why_us.value, inline=False)
-            app_embed.add_field(name="Ваши навыки стрельбы (Видео до 5 минут)", value=self.skills.value or "Не предоставлено", inline=False)
+            
+            # Поле 1: Ник в игре | Статик | Имя и возраст
+            info_value = self.info_field.value if self.info_field.value.strip() else "❌ Не заполнено"
+            app_embed.add_field(name="Ник в игре | Статик | Имя и возраст", value=info_value, inline=False)
+            
+            # Поле 2: Опыт на RP серверах | Ежедневный онлайн
+            exp_value = self.exp_field.value if self.exp_field.value.strip() else "❌ Не заполнено"
+            app_embed.add_field(name="Опыт на RP серверах | Ежедневный онлайн", value=exp_value, inline=False)
+            
+            # Поле 3: В каких семьях состояли до?
+            prev_value = self.prev_families.value if self.prev_families.value and self.prev_families.value.strip() else "💭 Не состоял(а) в других семьях"
+            app_embed.add_field(name="В каких семьях состояли до?", value=prev_value, inline=False)
+            
+            # Поле 4: Почему выбрали именно нас?
+            why_value = self.why_us.value if self.why_us.value.strip() else "❌ Не заполнено"
+            app_embed.add_field(name="Почему выбрали именно нас?", value=why_value, inline=False)
+            
+            # Поле 5: Ваши навыки стрельбы (Видео до 5 минут)
+            skills_value = self.skills.value if self.skills.value and self.skills.value.strip() else "🎬 Не предоставлено (не обязательно)"
+            app_embed.add_field(name="Ваши навыки стрельбы (Видео до 5 минут)", value=skills_value, inline=False)
+            
             app_embed.set_footer(text=f"ID пользователя: {interaction.user.id}")
 
             notify_role = interaction.guild.get_role(NOTIFY_ROLE_ID)
