@@ -67,7 +67,6 @@ EVENT_ADMIN_ROLES = [
 ]
 
 # --- ХРАНИЛИЩЕ ДАННЫХ ИВЕНТОВ ---
-# Формат: {message_id: {'will_attend': set(), 'wont_attend': set(), 'removed': set(), 'message': Message}}
 events_data = {}
 
 # --- НАСТРОЙКИ БОТА ---
@@ -89,7 +88,6 @@ def sanitize_channel_name(name: str) -> str:
     return name[:50] if name else 'ветка'
 
 def check_event_admin(user: discord.Member) -> bool:
-    """Проверяет, есть ли у пользователя права админа ивентов"""
     if user.id == OWNER_ID:
         return True
     user_roles = [role.id for role in user.roles]
@@ -137,11 +135,9 @@ class EventCreationModal(Modal, title="Создание ивента"):
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
-            # Создаем эмбед ивента
             embed = discord.Embed(
-                title="🎉 НОВЫЙ ИВЕНТ",
-                description=f"**Тип:** {self.event_type.value}\n\n"
-                           f"📅 **Дата:** {self.event_date.value}\n"
+                title=f"{self.event_type.value}",
+                description=f"📅 **Дата:** {self.event_date.value}\n"
                            f"⏰ **Время:** {self.event_time.value}\n"
                            f"📍 **Место:** {self.event_location.value}\n\n"
                            f"Организатор: {interaction.user.mention}",
@@ -149,27 +145,21 @@ class EventCreationModal(Modal, title="Создание ивента"):
                 timestamp=datetime.utcnow()
             )
             
-            # Скрытое упоминание @everyone
             everyone_mention = "||@everyone||"
             
-            # Добавляем поля для участников
             embed.add_field(name="✅ Будет (0)", value="*Пока нет записавшихся*", inline=True)
             embed.add_field(name="❌ Не будет (0)", value="*Пока нет записавшихся*", inline=True)
             embed.add_field(name="⚠️ Убрал галочку (0)", value="*Пока нет записавшихся*", inline=True)
             
             embed.set_footer(text=f"ID ивента: {interaction.id}")
             
-            # Создаем кнопки для ивента
             view = EventView()
             
-            # Отправляем ивент
             message = await self.channel.send(content=everyone_mention, embed=embed, view=view)
             
-            # Добавляем реакции
             await message.add_reaction('✅')
             await message.add_reaction('❌')
             
-            # Сохраняем данные ивента
             events_data[message.id] = {
                 'will_attend': set(),
                 'wont_attend': set(),
@@ -187,7 +177,6 @@ class EventCreationModal(Modal, title="Создание ивента"):
 
 
 class EventView(View):
-    """Кнопки управления ивентом"""
     def __init__(self):
         super().__init__(timeout=None)
     
@@ -211,7 +200,6 @@ class EventView(View):
                 await interaction.response.send_message("⚠️ Нет участников в списке 'Будет'.", ephemeral=True)
                 return
             
-            # Отправляем ЛС всем участникам
             dm_sent = 0
             dm_failed = 0
             
@@ -223,7 +211,6 @@ class EventView(View):
                 except:
                     dm_failed += 1
             
-            # Тэгаем всех в чате
             mentions = []
             for user_id in will_attend:
                 mentions.append(f"<@{user_id}>")
@@ -245,19 +232,15 @@ class EventView(View):
     @discord.ui.button(label="🏁 Завершить", style=discord.ButtonStyle.gray, custom_id="event_end")
     async def end_callback(self, interaction: discord.Interaction, button: Button):
         try:
-            # Отвечаем на сообщение с ивентом
             await interaction.message.reply("🏁 **Событие завершено**")
             
-            # Очищаем списки
             if interaction.message.id in events_data:
                 events_data[interaction.message.id]['will_attend'].clear()
                 events_data[interaction.message.id]['wont_attend'].clear()
                 events_data[interaction.message.id]['removed'].clear()
             
-            # Обновляем эмбед
             embed = interaction.message.embeds[0]
             
-            # Находим и обновляем поля
             for i, field in enumerate(embed.fields):
                 if "Будет" in field.name:
                     embed.set_field_at(i, name="✅ Будет (0)", value="*Ивент завершён*", inline=True)
@@ -266,12 +249,16 @@ class EventView(View):
                 elif "Убрал галочку" in field.name:
                     embed.set_field_at(i, name="⚠️ Убрал галочку (0)", value="*Ивент завершён*", inline=True)
             
-            await interaction.message.edit(embed=embed)
+            # ✅ УДАЛЯЕМ ВСЕ РЕАКЦИИ (ГАЛОЧКУ И КРЕСТИК)
+            try:
+                await interaction.message.clear_reactions()
+                print(f"Реакции удалены с ивента {interaction.message.id}")
+            except Exception as react_error:
+                print(f"Не удалось удалить реакции: {react_error}")
             
-            # Удаляем кнопки
+            await interaction.message.edit(embed=embed)
             await interaction.message.edit(view=None)
             
-            # Удаляем из хранилища
             if interaction.message.id in events_data:
                 del events_data[interaction.message.id]
             
@@ -708,7 +695,6 @@ class StartApplicationButton(View):
 @bot.tree.command(name="createevent", description="Создать ивент")
 @app_commands.describe(channel="Канал для публикации ивента")
 async def create_event(interaction: discord.Interaction, channel: discord.TextChannel):
-    """Создание ивента через модальное окно"""
     if not check_event_admin(interaction.user):
         await interaction.response.send_message("❌ У вас нет прав создавать ивенты.", ephemeral=True)
         return
@@ -842,7 +828,6 @@ async def rename_user_logic(ctx_or_interaction, member: discord.Member, new_nick
 
 @bot.event
 async def on_raw_reaction_add(payload):
-    """Обработка добавления реакции на ивент"""
     if payload.message_id not in events_data:
         return
     
@@ -852,45 +837,30 @@ async def on_raw_reaction_add(payload):
     event_data = events_data[payload.message_id]
     user_id = payload.user_id
     
-    # Игнорируем реакции бота
     if user_id == bot.user.id:
-        return
-    
-    # Игнорируем реакции админов на кнопки (не на реакции)
-    if user_id == OWNER_ID:
         return
     
     guild = bot.get_guild(payload.guild_id)
     if not guild:
         return
     
-    try:
-        user = await guild.fetch_member(user_id)
-        server_nick = user.display_name
-    except:
-        server_nick = f"User_{user_id}"
-    
     will_attend = event_data['will_attend']
     wont_attend = event_data['wont_attend']
     removed = event_data['removed']
     
     if str(payload.emoji) == '✅':
-        # Добавляем в "Будет", убираем из других списков
         will_attend.add(user_id)
         wont_attend.discard(user_id)
         removed.discard(user_id)
     elif str(payload.emoji) == '❌':
-        # Добавляем в "Не будет", убираем из других списков
         wont_attend.add(user_id)
         will_attend.discard(user_id)
         removed.discard(user_id)
     
-    # Обновляем эмбед
     await update_event_embed(event_data)
 
 @bot.event
 async def on_raw_reaction_remove(payload):
-    """Обработка удаления реакции с ивента"""
     if payload.message_id not in events_data:
         return
     
@@ -903,30 +873,17 @@ async def on_raw_reaction_remove(payload):
     if user_id == bot.user.id:
         return
     
-    guild = bot.get_guild(payload.guild_id)
-    if not guild:
-        return
-    
-    try:
-        user = await guild.fetch_member(user_id)
-        server_nick = user.display_name
-    except:
-        server_nick = f"User_{user_id}"
-    
     will_attend = event_data['will_attend']
     wont_attend = event_data['wont_attend']
     removed = event_data['removed']
     
-    # Если убрали галочку - добавляем в "Убрал" и убираем из "Будет"
     if user_id in will_attend:
         will_attend.discard(user_id)
         removed.add(user_id)
     
-    # Обновляем эмбед
     await update_event_embed(event_data)
 
 async def update_event_embed(event_data):
-    """Обновляет эмбед ивента со списками участников"""
     message = event_data['message']
     will_attend = event_data['will_attend']
     wont_attend = event_data['wont_attend']
@@ -934,36 +891,19 @@ async def update_event_embed(event_data):
     
     embed = message.embeds[0]
     
-    # Формируем списки
     will_list = []
     wont_list = []
     removed_list = []
     
     for user_id in will_attend:
-        try:
-            guild = message.guild
-            user = await guild.fetch_member(user_id)
-            will_list.append(user.display_name)
-        except:
-            will_list.append(f"User_{user_id}")
+        will_list.append(f"<@{user_id}>")
     
     for user_id in wont_attend:
-        try:
-            guild = message.guild
-            user = await guild.fetch_member(user_id)
-            wont_list.append(user.display_name)
-        except:
-            wont_list.append(f"User_{user_id}")
+        wont_list.append(f"<@{user_id}>")
     
     for user_id in removed:
-        try:
-            guild = message.guild
-            user = await guild.fetch_member(user_id)
-            removed_list.append(user.display_name)
-        except:
-            removed_list.append(f"User_{user_id}")
+        removed_list.append(f"<@{user_id}>")
     
-    # Обновляем поля
     for i, field in enumerate(embed.fields):
         if "Будет" in field.name:
             value = "\n".join(will_list) if will_list else "*Пока нет записавшихся*"
