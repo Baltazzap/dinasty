@@ -249,7 +249,6 @@ class EventView(View):
                 elif "Убрал галочку" in field.name:
                     embed.set_field_at(i, name="⚠️ Убрал галочку (0)", value="*Ивент завершён*", inline=True)
             
-            # ✅ УДАЛЯЕМ ВСЕ РЕАКЦИИ (ГАЛОЧКУ И КРЕСТИК)
             try:
                 await interaction.message.clear_reactions()
                 print(f"Реакции удалены с ивента {interaction.message.id}")
@@ -919,7 +918,11 @@ async def update_event_embed(event_data):
 
 @bot.event
 async def on_ready():
+    # ✅ УСТАНОВКА СТАТУСА "НЕ БЕСПОКОИТЬ"
+    await bot.change_presence(status=discord.Status.dnd)
+    
     print(f'Бот запущен как {bot.user}')
+    print(f'Статус: Не беспокоить (🔴)')
     print(f'Категория заявок: {CATEGORY_ID}')
     print(f'Категория личных веток: {PRIVATE_CHANNEL_CATEGORY_ID}')
     print(f'Канал логов: {LOG_CHANNEL_ID}')
