@@ -166,9 +166,29 @@ class TicketButtons(View):
 
         await log_channel.send(embed=log_embed)
 
+    def get_nickname_from_embed(self):
+        """Извлекает никнейм из первого поля эмбеда"""
+        if self.application_embed and self.application_embed.fields:
+            first_field = self.application_embed.fields[0]
+            value = first_field.value
+            if value and value != "❌ Не заполнено":
+                return value[:32]  # Обрезаем до 32 символов (лимит Discord)
+        return None
+
     @discord.ui.button(label="Принять", style=discord.ButtonStyle.green, custom_id="accept_app")
     async def accept_callback(self, interaction: discord.Interaction, button: Button):
         try:
+            # 🔄 Изменяем никнейм при принятии
+            nickname_changed = False
+            new_nickname = self.get_nickname_from_embed()
+            
+            if new_nickname:
+                try:
+                    await self.applicant.edit(nick=new_nickname)
+                    nickname_changed = True
+                except Exception as nick_error:
+                    print(f"Не удалось изменить никнейм: {nick_error}")
+            
             await self.send_to_logs(interaction, "✅ Заявка ОДОБРЕНА", discord.Color.green())
             
             try:
@@ -186,7 +206,13 @@ class TicketButtons(View):
             except Exception as e:
                 print(f"Ошибка при управлении ролями: {e}")
             
-            await interaction.response.send_message("Заявка принята! Роли выданы. Канал будет удален через 5 секунд.", ephemeral=True)
+            # 📝 Сообщение о результате
+            msg = "Заявка принята! "
+            if nickname_changed:
+                msg += f"Никнейм изменён на `{new_nickname}`. "
+            msg += "Роли выданы. Канал будет удален через 5 секунд."
+            
+            await interaction.response.send_message(msg, ephemeral=True)
             await asyncio.sleep(5)
             await interaction.channel.delete()
         except Exception as e:
@@ -330,9 +356,10 @@ class ApplicationModal(Modal, title="Анкета в семью"):
     def __init__(self):
         super().__init__()
         
+        # 📝 Поле 1: Игровой ник | Статик ID (обновлено)
         self.info_field = TextInput(
-            label="Ник в игре | Статик | Имя и возраст",
-            placeholder="Например: Player123 | PC | Иван, 20 лет",
+            label="Игровой ник | Статик ID",
+            placeholder="Например: Player123 | 12345",
             max_length=100
         )
         
@@ -404,8 +431,9 @@ class ApplicationModal(Modal, title="Анкета в семью"):
             app_embed = discord.Embed(title=":file_folder: Анкета кандидата", color=discord.Color.blue())
             app_embed.set_author(name=interaction.user.name, icon_url=interaction.user.avatar.url)
             
+            # 📝 Поле 1: Игровой ник | Статик ID
             info_value = self.info_field.value.strip() if self.info_field.value and self.info_field.value.strip() else "❌ Не заполнено"
-            app_embed.add_field(name="Ник в игре | Статик | Имя и возраст", value=info_value, inline=False)
+            app_embed.add_field(name="Игровой ник | Статик ID", value=info_value, inline=False)
             
             exp_value = self.exp_field.value.strip() if self.exp_field.value and self.exp_field.value.strip() else "❌ Не заполнено"
             app_embed.add_field(name="Опыт на RP серверах | Ежедневный онлайн", value=exp_value, inline=False)
