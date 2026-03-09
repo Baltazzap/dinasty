@@ -5,6 +5,7 @@ from discord.ui import Button, View, Modal, TextInput
 import os
 import traceback
 import asyncio
+import re
 
 # Получение токена из переменной окружения DISCORD_TOKEN
 TOKEN = os.getenv('DISCORD_TOKEN')
@@ -63,6 +64,29 @@ intents.message_content = True
 intents.members = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
+
+# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
+
+def sanitize_channel_name(name: str) -> str:
+    """
+    Очищает имя для названия канала Discord.
+    - Нижний регистр
+    - Замена пробелов и спецсимволов на дефисы
+    - Удаление недопустимых символов
+    - Лимит 50 символов
+    """
+    # Приводим к нижнему регистру
+    name = name.lower()
+    # Заменяем пробелы и подчёркивания на дефисы
+    name = name.replace(' ', '-').replace('_', '-')
+    # Удаляем недопустимые символы (оставляем буквы, цифры, дефисы)
+    name = re.sub(r'[^a-zа-яё0-9-]', '', name)
+    # Удаляем повторяющиеся дефисы
+    name = re.sub(r'-+', '-', name)
+    # Удаляем дефисы в начале и конце
+    name = name.strip('-')
+    # Обрезаем до 50 символов
+    return name[:50] if name else 'ветка'
 
 # --- КЛАССЫ ИНТЕРФЕЙСА (UI) ---
 
@@ -311,18 +335,22 @@ class PrivateChannelButtons(View):
                 await interaction.response.send_message("❌ Указанный ID не является категорией.", ephemeral=True)
                 return
             
-            # ✅ ИСПОЛЬЗУЕМ СЕРВЕРНЫЙ НИКНЕЙМ ВМЕСТО ГЛОБАЛЬНОГО ИМЕНИ
-            # display_name возвращает серверный ник, если он установлен, иначе глобальное имя
-            user_display_name = interaction.user.display_name
+            # ✅ БЕРЁМ СЕРВЕРНЫЙ НИКНЕЙМ (display_name)
+            # Если серверный ник не установлен, вернётся глобальное имя
+            server_nickname = interaction.user.display_name
             
-            # Очищаем имя от недопустимых символов для названия канала
-            channel_name = f"ветка-{user_display_name}"
-            channel_name = channel_name.lower().replace(' ', '-').replace('_', '-')[:50]  # Лимит 50 символов
+            # ✅ ФОРМИРУЕМ НАЗВАНИЕ КАНАЛА: ветка-(серверное имя)
+            sanitized_name = sanitize_channel_name(server_nickname)
+            channel_name = f"ветка-{sanitized_name}"
+            
+            print(f"Создание ветки для {interaction.user.name}:")
+            print(f"  Серверный ник: {server_nickname}")
+            print(f"  Название канала: {channel_name}")
             
             new_channel = await category.create_text_channel(
                 name=channel_name,
                 reason="Создание личной ветки",
-                topic=f"Личная ветка от {user_display_name}"
+                topic=f"Личная ветка от {server_nickname}"
             )
             
             await new_channel.set_permissions(interaction.guild.default_role, view_channel=False, send_messages=False)
@@ -340,7 +368,7 @@ class PrivateChannelButtons(View):
             )
             embed.add_field(name="👤 Владелец", value=interaction.user.mention, inline=True)
             embed.add_field(name="📁 Категория", value=category.mention, inline=True)
-            embed.add_field(name="🏷️ Серверный ник", value=user_display_name, inline=True)
+            embed.add_field(name="🏷️ Серверный ник", value=server_nickname, inline=True)
             embed.set_footer(text=f"ID канала: {new_channel.id}")
             
             await new_channel.send(embed=embed)
