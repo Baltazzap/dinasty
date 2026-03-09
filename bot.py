@@ -6,7 +6,6 @@ import os
 import traceback
 import asyncio
 import re
-from datetime import datetime
 
 # Получение токена из переменной окружения DISCORD_TOKEN
 TOKEN = os.getenv('DISCORD_TOKEN')
@@ -22,9 +21,6 @@ VOICE_CHANNEL_ID = 1449567766666416148
 
 # 📁 Категория для личных веток
 PRIVATE_CHANNEL_CATEGORY_ID = 1449567768524623972
-
-# 💬 Канал для регистрации на ивенты (где пишут "+")
-EVENT_SIGNUP_CHANNEL_ID = 1449567766666416155
 
 # Роль для упоминания при новой заявке
 NOTIFY_ROLE_ID = 1449567765810778202
@@ -62,26 +58,10 @@ PRIVATE_CHANNEL_VISIBLE_ROLES = [
     1449567765810778205
 ]
 
-# 🎉 Роли для управления ивентами
-EVENT_ADMIN_ROLES = [
-    1449567765810778211,
-    1449567765810778210,
-    1449567765810778205
-]
-
-# --- ХРАНИЛИЩЕ ДАННЫХ ИВЕНТОВ ---
-# Формат: {event_message_id: {'will_attend': {user_id: message_id}, 'removed': set(), 'event_message': Message, 'signup_channel_id': int}}
-events_data = {}
-
-# Хранилище для связи message_id "+" с event_id
-plus_messages = {}  # {message_id: event_id}
-
 # --- НАСТРОЙКИ БОТА ---
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
-intents.reactions = True
-intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
@@ -95,234 +75,7 @@ def sanitize_channel_name(name: str) -> str:
     name = name.strip('-')
     return name[:50] if name else 'ветка'
 
-def check_event_admin(user: discord.Member) -> bool:
-    if user.id == OWNER_ID:
-        return True
-    user_roles = [role.id for role in user.roles]
-    return any(role_id in user_roles for role_id in EVENT_ADMIN_ROLES)
-
 # --- КЛАССЫ ИНТЕРФЕЙСА (UI) ---
-
-class EditEventModal(Modal, title="Редактировать ивент"):
-    def __init__(self, event_id: int, current_title: str):
-        super().__init__()
-        self.event_id = event_id
-        self.current_title = current_title
-        
-        self.event_type = TextInput(
-            label="Название ивента",
-            default=current_title,
-            style=discord.TextStyle.short,
-            max_length=100
-        )
-        self.add_item(self.event_type)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        try:
-            event_data = events_data.get(self.event_id)
-            if not event_
-                await interaction.response.send_message("❌ Ивент не найден.", ephemeral=True)
-                return
-            
-            embed = event_data['event_message'].embeds[0]
-            embed.title = self.event_type.value
-            
-            await event_data['event_message'].edit(embed=embed)
-            await interaction.response.send_message(f"✅ Название ивента изменено на: `{self.event_type.value}`", ephemeral=True)
-            
-        except Exception as e:
-            print(f"Ошибка при редактировании ивента: {e}")
-            if not interaction.response.is_done():
-                await interaction.response.send_message(f"❌ Произошла ошибка: `{str(e)}`", ephemeral=True)
-
-
-class EventCreationModal(Modal, title="Создание ивента"):
-    def __init__(self, channel: discord.TextChannel):
-        super().__init__()
-        self.channel = channel
-        
-        self.event_type = TextInput(
-            label="Тип ивента",
-            placeholder="Мероприятие, проверка активности, захват территории, война или своё",
-            style=discord.TextStyle.short,
-            max_length=100
-        )
-        
-        self.event_date = TextInput(
-            label="Дата проведения",
-            placeholder="Например: 25.12.2024",
-            style=discord.TextStyle.short,
-            max_length=50
-        )
-        
-        self.event_time = TextInput(
-            label="Время проведения",
-            placeholder="Например: 20:00 МСК",
-            style=discord.TextStyle.short,
-            max_length=50
-        )
-        
-        self.event_location = TextInput(
-            label="Место проведения",
-            placeholder="Например: Сервер #1, координаты X:100 Y:200",
-            style=discord.TextStyle.long,
-            max_length=500
-        )
-        
-        self.add_item(self.event_type)
-        self.add_item(self.event_date)
-        self.add_item(self.event_time)
-        self.add_item(self.event_location)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        try:
-            embed = discord.Embed(
-                title=f"{self.event_type.value}",
-                description=f"📅 **Дата:** {self.event_date.value}\n"
-                           f"⏰ **Время:** {self.event_time.value}\n"
-                           f"📍 **Место:** {self.event_location.value}\n\n"
-                           f"Организатор: {interaction.user.mention}\n\n"
-                           f"📝 **Как записаться:** Отправьте `+` в канал <#{EVENT_SIGNUP_CHANNEL_ID}>",
-                color=discord.Color.gold(),
-                timestamp=datetime.utcnow()
-            )
-            
-            everyone_mention = "||@everyone||"
-            
-            embed.add_field(name="✅ Будет (0)", value="*Пока нет записавшихся*", inline=True)
-            embed.add_field(name="⚠️ Убрали плюс (0)", value="*Пока нет записавшихся*", inline=True)
-            
-            embed.set_footer(text=f"ID ивента: {interaction.id}")
-            
-            view = EventView()
-            
-            message = await self.channel.send(content=everyone_mention, embed=embed, view=view)
-            
-            events_data[message.id] = {
-                'will_attend': {},  # {user_id: message_id}
-                'removed': set(),
-                'event_message': message,
-                'channel': self.channel,
-                'signup_channel_id': EVENT_SIGNUP_CHANNEL_ID
-            }
-            
-            await interaction.response.send_message(
-                f"✅ Ивент успешно создан!\n\nЗапись происходит в канале <#{EVENT_SIGNUP_CHANNEL_ID}> - отправьте туда `+`",
-                ephemeral=True
-            )
-            
-        except Exception as e:
-            print(f"Ошибка при создании ивента: {e}")
-            if not interaction.response.is_done():
-                await interaction.response.send_message(f"❌ Произошла ошибка: `{str(e)}`", ephemeral=True)
-
-
-class EventView(View):
-    def __init__(self):
-        super().__init__(timeout=None)
-    
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if not check_event_admin(interaction.user):
-            await interaction.response.send_message("❌ У вас нет прав управлять этим ивентом.", ephemeral=True)
-            return False
-        return True
-    
-    @discord.ui.button(label="📢 Созвать всех", style=discord.ButtonStyle.red, custom_id="event_summon")
-    async def summon_callback(self, interaction: discord.Interaction, button: Button):
-        try:
-            event_data = events_data.get(interaction.message.id)
-            if not event_data:
-                await interaction.response.send_message("❌ Данные ивента не найдены.", ephemeral=True)
-                return
-            
-            will_attend = event_data['will_attend']
-            
-            if not will_attend:
-                await interaction.response.send_message("⚠️ Нет участников в списке 'Будет'.", ephemeral=True)
-                return
-            
-            dm_sent = 0
-            dm_failed = 0
-            
-            for user_id in will_attend.keys():
-                try:
-                    user = await interaction.guild.fetch_member(user_id)
-                    await user.send("🔔 **Просыпаемся! Заходим в ГС и ИГРУ!**")
-                    dm_sent += 1
-                except:
-                    dm_failed += 1
-            
-            mentions = []
-            for user_id in will_attend.keys():
-                mentions.append(f"<@{user_id}>")
-            
-            mention_text = " ".join(mentions)
-            
-            await interaction.response.send_message(
-                f"🔔 **Просыпаемся! Заходим в ГС и ИГРУ!**\n\n{mention_text}",
-                ephemeral=False
-            )
-            
-            print(f"Ивент: Отправлено {dm_sent} ЛС, не удалось {dm_failed}")
-            
-        except Exception as e:
-            print(f"Ошибка в summon_callback: {e}")
-            if not interaction.response.is_done():
-                await interaction.response.send_message(f"❌ Произошла ошибка: `{str(e)}`", ephemeral=True)
-    
-    @discord.ui.button(label="✏️ Редактировать", style=discord.ButtonStyle.blurple, custom_id="event_edit")
-    async def edit_callback(self, interaction: discord.Interaction, button: Button):
-        try:
-            event_data = events_data.get(interaction.message.id)
-            if not event_
-                await interaction.response.send_message("❌ Данные ивента не найдены.", ephemeral=True)
-                return
-            
-            embed = interaction.message.embeds[0]
-            current_title = embed.title
-            
-            await interaction.response.send_modal(EditEventModal(interaction.message.id, current_title))
-            
-        except Exception as e:
-            print(f"Ошибка в edit_callback: {e}")
-            if not interaction.response.is_done():
-                await interaction.response.send_message(f"❌ Произошла ошибка: `{str(e)}`", ephemeral=True)
-    
-    @discord.ui.button(label="🏁 Завершить сбор", style=discord.ButtonStyle.gray, custom_id="event_end")
-    async def end_callback(self, interaction: discord.Interaction, button: Button):
-        try:
-            await interaction.message.reply("🏁 **Сбор завершен**")
-            
-            if interaction.message.id in events_
-                events_data[interaction.message.id]['will_attend'].clear()
-                events_data[interaction.message.id]['removed'].clear()
-            
-            embed = interaction.message.embeds[0]
-            
-            for i, field in enumerate(embed.fields):
-                if "Будет" in field.name:
-                    embed.set_field_at(i, name="✅ Будет (0)", value="*Сбор завершен*", inline=True)
-                elif "Убрали плюс" in field.name:
-                    embed.set_field_at(i, name="⚠️ Убрали плюс (0)", value="*Сбор завершен*", inline=True)
-            
-            await interaction.message.edit(embed=embed)
-            await interaction.message.edit(view=None)
-            
-            if interaction.message.id in events_
-                del events_data[interaction.message.id]
-            
-            # Очищаем связанные сообщения "+"
-            for msg_id, evt_id in list(plus_messages.items()):
-                if evt_id == interaction.message.id:
-                    del plus_messages[msg_id]
-            
-            await interaction.response.send_message("✅ Сбор завершен!", ephemeral=True)
-            
-        except Exception as e:
-            print(f"Ошибка в end_callback: {e}")
-            if not interaction.response.is_done():
-                await interaction.response.send_message(f"❌ Произошла ошибка: `{str(e)}`", ephemeral=True)
-
 
 class DeclineReasonModal(Modal, title="Причина отклонения"):
     def __init__(self, applicant: discord.Member, application_embed: discord.Embed, interaction: discord.Interaction):
@@ -746,15 +499,6 @@ class StartApplicationButton(View):
 
 # --- КОМАНДЫ БОТА ---
 
-@bot.tree.command(name="createevent", description="Создать ивент")
-@app_commands.describe(channel="Канал для публикации ивента")
-async def create_event(interaction: discord.Interaction, channel: discord.TextChannel):
-    if not check_event_admin(interaction.user):
-        await interaction.response.send_message("❌ У вас нет прав создавать ивенты.", ephemeral=True)
-        return
-    
-    await interaction.response.send_modal(EventCreationModal(channel))
-
 @bot.command(name="заявка")
 async def send_application_embed(ctx):
     try:
@@ -814,6 +558,28 @@ async def private_channel_command(ctx):
     
     view = PrivateChannelButtons()
     await ctx.send(embed=embed, view=view)
+
+@bot.tree.command(name="ветка", description="Создать эмбед для создания личной ветки")
+async def private_channel_slash(interaction: discord.Interaction):
+    if interaction.user.id == OWNER_ID:
+        pass
+    else:
+        user_roles = [role.id for role in interaction.user.roles]
+        if not any(role_id in user_roles for role_id in ADMIN_ROLES):
+            await interaction.response.send_message("❌ У вас нет прав использовать эту команду.", ephemeral=True)
+            return
+    
+    embed = discord.Embed(
+        title="🔒 Личная ветка",
+        description="Нажмите на кнопку ниже, чтобы создать свою личную ветку.\n\nВ этой ветке сможете писать только вы и администрация сервера.",
+        color=discord.Color.blurple()
+    )
+    embed.add_field(name="📁 Категория", value=f"<#{PRIVATE_CHANNEL_CATEGORY_ID}>", inline=True)
+    embed.add_field(name="👥 Доступ", value="Только вы и администрация", inline=True)
+    embed.set_footer(text="Личные ветки создаются автоматически")
+    
+    view = PrivateChannelButtons()
+    await interaction.response.send_message(embed=embed, view=view)
 
 @bot.command(name="rename")
 async def rename_user_prefix(ctx, member: discord.Member, *, new_nickname: str):
@@ -878,82 +644,6 @@ async def rename_user_logic(ctx_or_interaction, member: discord.Member, new_nick
         print(f"Ошибка при изменении никнейма: {e}")
         await response_method(f"❌ Произошла ошибка при изменении никнейма: `{str(e)}`", ephemeral=True)
 
-# --- ОБРАБОТКА СООБЩЕНИЙ "+" В КАНАЛЕ ИВЕНТА ---
-
-@bot.event
-async def on_message(message):
-    # Обработка "+" для регистрации на ивент
-    if message.channel.id == EVENT_SIGNUP_CHANNEL_ID:
-        if message.content.strip() == '+':
-            # Ищем активный ивент
-            for event_id, event_data in events_data.items():
-                if event_data.get('signup_channel_id') == EVENT_SIGNUP_CHANNEL_ID:
-                    user_id = message.author.id
-                    
-                    # Добавляем в список "Будет"
-                    event_data['will_attend'][user_id] = message.id
-                    plus_messages[message.id] = event_id
-                    
-                    # Обновляем эмбед
-                    await update_event_embed(event_data)
-                    
-                    # Удаляем сообщение "+" (опционально)
-                    try:
-                        await message.delete()
-                    except:
-                        pass
-                    
-                    break
-    
-    await bot.process_commands(message)
-
-@bot.event
-async def on_message_delete(message):
-    # Обработка удаления "+" для переноса в "Убрали плюс"
-    if message.id in plus_messages:
-        event_id = plus_messages[message.id]
-        event_data = events_data.get(event_id)
-        
-        if event_
-            user_id = message.author.id
-            
-            # Удаляем из "Будет" и добавляем в "Убрали плюс"
-            if user_id in event_data['will_attend']:
-                del event_data['will_attend'][user_id]
-            event_data['removed'].add(user_id)
-            
-            # Удаляем из хранилища сообщений
-            del plus_messages[message.id]
-            
-            # Обновляем эмбед
-            await update_event_embed(event_data)
-
-async def update_event_embed(event_data):
-    message = event_data['event_message']
-    will_attend = event_data['will_attend']
-    removed = event_data['removed']
-    
-    embed = message.embeds[0]
-    
-    will_list = []
-    removed_list = []
-    
-    for user_id in will_attend.keys():
-        will_list.append(f"<@{user_id}>")
-    
-    for user_id in removed:
-        removed_list.append(f"<@{user_id}>")
-    
-    for i, field in enumerate(embed.fields):
-        if "Будет" in field.name:
-            value = "\n".join(will_list) if will_list else "*Пока нет записавшихся*"
-            embed.set_field_at(i, name=f"✅ Будет ({len(will_list)})", value=value, inline=True)
-        elif "Убрали плюс" in field.name:
-            value = "\n".join(removed_list) if removed_list else "*Пока нет записавшихся*"
-            embed.set_field_at(i, name=f"⚠️ Убрали плюс ({len(removed_list)})", value=value, inline=True)
-    
-    await message.edit(embed=embed)
-
 @bot.event
 async def on_ready():
     # ✅ УСТАНОВКА СТАТУСА "НЕ БЕСПОКОИТЬ"
@@ -964,7 +654,6 @@ async def on_ready():
     print(f'Категория заявок: {CATEGORY_ID}')
     print(f'Категория личных веток: {PRIVATE_CHANNEL_CATEGORY_ID}')
     print(f'Канал логов: {LOG_CHANNEL_ID}')
-    print(f'Канал регистрации на ивенты: {EVENT_SIGNUP_CHANNEL_ID}')
     print(f'Роль для уведомлений: {NOTIFY_ROLE_ID}')
     print(f'Владелец бота (полный доступ): {OWNER_ID}')
     print(f'Роль для выдачи 1: {ROLE_ADD_1}')
@@ -973,7 +662,6 @@ async def on_ready():
     
     bot.add_view(StartApplicationButton())
     bot.add_view(PrivateChannelButtons())
-    bot.add_view(EventView())
     print('✅ Постоянные кнопки зарегистрированы')
     
     try:
