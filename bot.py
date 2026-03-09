@@ -172,13 +172,12 @@ class TicketButtons(View):
             first_field = self.application_embed.fields[0]
             value = first_field.value
             if value and value != "❌ Не заполнено":
-                return value[:32]  # Обрезаем до 32 символов (лимит Discord)
+                return value[:32]
         return None
 
     @discord.ui.button(label="Принять", style=discord.ButtonStyle.green, custom_id="accept_app")
     async def accept_callback(self, interaction: discord.Interaction, button: Button):
         try:
-            # 🔄 Изменяем никнейм при принятии
             nickname_changed = False
             new_nickname = self.get_nickname_from_embed()
             
@@ -206,7 +205,6 @@ class TicketButtons(View):
             except Exception as e:
                 print(f"Ошибка при управлении ролями: {e}")
             
-            # 📝 Сообщение о результате
             msg = "Заявка принята! "
             if nickname_changed:
                 msg += f"Никнейм изменён на `{new_nickname}`. "
@@ -313,12 +311,18 @@ class PrivateChannelButtons(View):
                 await interaction.response.send_message("❌ Указанный ID не является категорией.", ephemeral=True)
                 return
             
-            channel_name = f"ветка-{interaction.user.name}"
+            # ✅ ИСПОЛЬЗУЕМ СЕРВЕРНЫЙ НИКНЕЙМ ВМЕСТО ГЛОБАЛЬНОГО ИМЕНИ
+            # display_name возвращает серверный ник, если он установлен, иначе глобальное имя
+            user_display_name = interaction.user.display_name
+            
+            # Очищаем имя от недопустимых символов для названия канала
+            channel_name = f"ветка-{user_display_name}"
+            channel_name = channel_name.lower().replace(' ', '-').replace('_', '-')[:50]  # Лимит 50 символов
             
             new_channel = await category.create_text_channel(
                 name=channel_name,
                 reason="Создание личной ветки",
-                topic=f"Личная ветка от {interaction.user.name}"
+                topic=f"Личная ветка от {user_display_name}"
             )
             
             await new_channel.set_permissions(interaction.guild.default_role, view_channel=False, send_messages=False)
@@ -336,6 +340,7 @@ class PrivateChannelButtons(View):
             )
             embed.add_field(name="👤 Владелец", value=interaction.user.mention, inline=True)
             embed.add_field(name="📁 Категория", value=category.mention, inline=True)
+            embed.add_field(name="🏷️ Серверный ник", value=user_display_name, inline=True)
             embed.set_footer(text=f"ID канала: {new_channel.id}")
             
             await new_channel.send(embed=embed)
@@ -356,7 +361,6 @@ class ApplicationModal(Modal, title="Анкета в семью"):
     def __init__(self):
         super().__init__()
         
-        # 📝 Поле 1: Игровой ник | Статик ID (обновлено)
         self.info_field = TextInput(
             label="Игровой ник | Статик ID",
             placeholder="Например: Player123 | 12345",
@@ -431,7 +435,6 @@ class ApplicationModal(Modal, title="Анкета в семью"):
             app_embed = discord.Embed(title=":file_folder: Анкета кандидата", color=discord.Color.blue())
             app_embed.set_author(name=interaction.user.name, icon_url=interaction.user.avatar.url)
             
-            # 📝 Поле 1: Игровой ник | Статик ID
             info_value = self.info_field.value.strip() if self.info_field.value and self.info_field.value.strip() else "❌ Не заполнено"
             app_embed.add_field(name="Игровой ник | Статик ID", value=info_value, inline=False)
             
@@ -649,7 +652,6 @@ async def on_ready():
     print(f'Роль для выдачи 2: {ROLE_ADD_2}')
     print(f'Роль для удаления: {ROLE_REMOVE}')
     
-    # ✅ РЕГИСТРАЦИЯ ПОСТОЯННЫХ КНОПОК (РАБОТАЮТ ПОСЛЕ ПЕРЕЗАПУСКА)
     bot.add_view(StartApplicationButton())
     bot.add_view(PrivateChannelButtons())
     print('✅ Постоянные кнопки зарегистрированы')
