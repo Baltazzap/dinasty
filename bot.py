@@ -6,6 +6,7 @@ import os
 import traceback
 import asyncio
 import re
+from datetime import datetime
 
 # Получение токена из переменной окружения DISCORD_TOKEN
 TOKEN = os.getenv('DISCORD_TOKEN')
@@ -58,10 +59,22 @@ PRIVATE_CHANNEL_VISIBLE_ROLES = [
     1449567765810778205
 ]
 
+# 🎮 Роли для управления меню активности
+MENU_ADMIN_ROLES = [
+    1449567765810778211,
+    1449567765810778210,
+    1449567765810778205
+]
+
+# --- ХРАНИЛИЩЕ ДАННЫХ МЕНЮ АКТИВНОСТИ ---
+menu_data = {}  # {message_id: {'will_attend': {user_id: message_id}, 'removed': set(), 'thread': Thread, 'start_time': str, 'is_active': bool}}
+plus_messages = {}  # {message_id: menu_message_id}
+
 # --- НАСТРОЙКИ БОТА ---
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
+intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
@@ -75,7 +88,281 @@ def sanitize_channel_name(name: str) -> str:
     name = name.strip('-')
     return name[:50] if name else 'ветка'
 
+def check_menu_admin(user: discord.Member) -> bool:
+    if user.id == OWNER_ID:
+        return True
+    user_roles = [role.id for role in user.roles]
+    return any(role_id in user_roles for role_id in MENU_ADMIN_ROLES)
+
 # --- КЛАССЫ ИНТЕРФЕЙСА (UI) ---
+
+class EditMenuModal(Modal, title="Редактировать меню"):
+    def __init__(self, menu_id: int, current_title: str):
+        super().__init__()
+        self.menu_id = menu_id
+        self.current_title = current_title
+        
+        self.menu_title = TextInput(
+            label="Название меню",
+            default=current_title,
+            style=discord.TextStyle.short,
+            max_length=100
+        )
+        self.add_item(self.menu_title)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            data = menu_data.get(self.menu_id)
+            if not data:
+                await interaction.response.send_message("❌ Меню не найдено.", ephemeral=True)
+                return
+            
+            embed = data['message'].embeds[0]
+            embed.title = self.menu_title.value
+            
+            await data['message'].edit(embed=embed)
+            await interaction.response.send_message(f"✅ Название изменено на: `{self.menu_title.value}`", ephemeral=True)
+            
+        except Exception as e:
+            print(f"Ошибка при редактировании меню: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"❌ Произошла ошибка: `{str(e)}`", ephemeral=True)
+
+
+class MenuView(View):
+    def __init__(self):
+        super().__init__(timeout=None)
+    
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if not check_menu_admin(interaction.user):
+            await interaction.response.send_message("❌ У вас нет прав управлять этим меню.", ephemeral=True)
+            return False
+        return True
+    
+    @discord.ui.button(label="🏁 Завершить", style=discord.ButtonStyle.gray, custom_id="menu_end")
+    async def end_callback(self, interaction: discord.Interaction, button: Button):
+        try:
+            data = menu_data.get(interaction.message.id)
+            if not data:
+                await interaction.response.send_message("❌ Данные меню не найдены.", ephemeral=True)
+                return
+            
+            # Обновляем статус
+            data['is_active'] = False
+            
+            # Удаляем ветку
+            if data.get('thread'):
+                try:
+                    await data['thread'].delete()
+                    print(f"Ветка меню {interaction.message.id} удалена")
+                except Exception as thread_error:
+                    print(f"Не удалось удалить ветку: {thread_error}")
+                data['thread'] = None
+            
+            # Обновляем эмбед
+            embed = interaction.message.embeds[0]
+            
+            # Обновляем статус
+            for i, field in enumerate(embed.fields):
+                if "Статус" in field.name:
+                    embed.set_field_at(i, name="**Статус**", value="🔴Сбор закрыт", inline=False)
+                    break
+            
+            await interaction.message.edit(embed=embed, view=MenuView())
+            
+            await interaction.response.send_message("✅ Сбор завершен! Ветка удалена.", ephemeral=True)
+            
+        except Exception as e:
+            print(f"Ошибка в end_callback: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"❌ Произошла ошибка: `{str(e)}`", ephemeral=True)
+    
+    @discord.ui.button(label="▶️ Возобновить", style=discord.ButtonStyle.green, custom_id="menu_resume")
+    async def resume_callback(self, interaction: discord.Interaction, button: Button):
+        try:
+            data = menu_data.get(interaction.message.id)
+            if not data:
+                await interaction.response.send_message("❌ Данные меню не найдены.", ephemeral=True)
+                return
+            
+            # Обновляем статус
+            data['is_active'] = True
+            
+            # Создаем новую ветку
+            thread = await interaction.message.create_thread(
+                name="Плюсы",
+                reason="Возобновление сбора активности"
+            )
+            data['thread'] = thread
+            
+            # Обновляем время
+            data['start_time'] = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+            
+            # Обновляем эмбед
+            embed = interaction.message.embeds[0]
+            
+            # Обновляем поля
+            for i, field in enumerate(embed.fields):
+                if "Начало" in field.name:
+                    embed.set_field_at(i, name="**Начало**", value=data['start_time'], inline=False)
+                elif "Статус" in field.name:
+                    embed.set_field_at(i, name="**Статус**", value="🟢Сбор открыт (Пиши + в ветку)", inline=False)
+            
+            await interaction.message.edit(embed=embed, view=MenuView())
+            
+            # Отправляем сообщение в ветку
+            await thread.send(
+                f"📝 **Пиши `+` в ветку, что бы записаться**\n\n"
+                f"Ветка возобновлена: {data['start_time']}"
+            )
+            
+            await interaction.response.send_message(f"✅ Сбор возобновлен! Ветка создана: {thread.mention}", ephemeral=True)
+            
+        except Exception as e:
+            print(f"Ошибка в resume_callback: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"❌ Произошла ошибка: `{str(e)}`", ephemeral=True)
+    
+    @discord.ui.button(label="📢 Позвать всех", style=discord.ButtonStyle.red, custom_id="menu_summon")
+    async def summon_callback(self, interaction: discord.Interaction, button: Button):
+        try:
+            data = menu_data.get(interaction.message.id)
+            if not data:
+                await interaction.response.send_message("❌ Данные меню не найдены.", ephemeral=True)
+                return
+            
+            thread = data.get('thread')
+            if not thread:
+                await interaction.response.send_message("❌ Ветка не найдена. Нажмите 'Возобновить'.", ephemeral=True)
+                return
+            
+            await thread.send("||@everyone||\n\n🔔 **Заходим в ВОЙС и в ИГРУ!**")
+            
+            await interaction.response.send_message("✅ Все позваны в ветку!", ephemeral=True)
+            
+        except Exception as e:
+            print(f"Ошибка в summon_callback: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"❌ Произошла ошибка: `{str(e)}`", ephemeral=True)
+    
+    @discord.ui.button(label="✏️ Редактировать", style=discord.ButtonStyle.blurple, custom_id="menu_edit")
+    async def edit_callback(self, interaction: discord.Interaction, button: Button):
+        try:
+            data = menu_data.get(interaction.message.id)
+            if not data:
+                await interaction.response.send_message("❌ Данные меню не найдены.", ephemeral=True)
+                return
+            
+            embed = interaction.message.embeds[0]
+            current_title = embed.title
+            
+            await interaction.response.send_modal(EditMenuModal(interaction.message.id, current_title))
+            
+        except Exception as e:
+            print(f"Ошибка в edit_callback: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"❌ Произошла ошибка: `{str(e)}`", ephemeral=True)
+    
+    @discord.ui.button(label="🔔 Напомнить всем (ЛС)", style=discord.ButtonStyle.blurple, custom_id="menu_remind")
+    async def remind_callback(self, interaction: discord.Interaction, button: Button):
+        try:
+            data = menu_data.get(interaction.message.id)
+            if not data:
+                await interaction.response.send_message("❌ Данные меню не найдены.", ephemeral=True)
+                return
+            
+            will_attend = data['will_attend']
+            
+            if not will_attend:
+                await interaction.response.send_message("⚠️ Нет участников в списке 'ОСНОВА'.", ephemeral=True)
+                return
+            
+            dm_sent = 0
+            dm_failed = 0
+            
+            for user_id in will_attend.keys():
+                try:
+                    user = await interaction.guild.fetch_member(user_id)
+                    await user.send("🔔 **Ты записан в ОСНОВУ, Заходим в ВОЙС и в ИГРУ!**")
+                    dm_sent += 1
+                except:
+                    dm_failed += 1
+            
+            await interaction.response.send_message(f"✅ Отправлено {dm_sent} ЛС, не удалось {dm_failed}", ephemeral=True)
+            
+        except Exception as e:
+            print(f"Ошибка в remind_callback: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"❌ Произошла ошибка: `{str(e)}`", ephemeral=True)
+
+
+class MenuCreationModal(Modal, title="Создание меню активности"):
+    def __init__(self):
+        super().__init__()
+        
+        self.menu_title = TextInput(
+            label="Название меню",
+            placeholder="Например: Меню Активности",
+            style=discord.TextStyle.short,
+            max_length=100,
+            default="Меню Активности"
+        )
+        self.add_item(self.menu_title)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            start_time = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+            
+            embed = discord.Embed(
+                title=f"{self.menu_title.value}",
+                color=discord.Color.gold(),
+                timestamp=datetime.utcnow()
+            )
+            
+            embed.add_field(name="**Начало**", value=start_time, inline=False)
+            embed.add_field(name="**Инструкция**", value="Пиши `+` в ветку, что бы записаться", inline=False)
+            embed.add_field(name="✅ОСНОВА (0)", value="*Пока нет записавшихся*", inline=True)
+            embed.add_field(name="❌УБРАЛИ ПЛЮС (0)", value="*Пока нет записавшихся*", inline=True)
+            embed.add_field(name="**Статус**", value="🟢Сбор открыт (Пиши + в ветку)", inline=False)
+            
+            embed.set_footer(text=f"ID меню: {interaction.id}")
+            
+            view = MenuView()
+            
+            message = await interaction.channel.send(embed=embed, view=view)
+            
+            # Создаем ветку
+            thread = await message.create_thread(
+                name="Плюсы",
+                reason="Создание меню активности"
+            )
+            
+            # Отправляем инструкцию в ветку
+            await thread.send(
+                f"📝 **Пиши `+` в ветку, что бы записаться**\n\n"
+                f"Ветка создана: {start_time}"
+            )
+            
+            # Сохраняем данные
+            menu_data[message.id] = {
+                'will_attend': {},  # {user_id: message_id}
+                'removed': set(),
+                'message': message,
+                'thread': thread,
+                'start_time': start_time,
+                'is_active': True
+            }
+            
+            await interaction.response.send_message(
+                f"✅ Меню активности создано!\n\nВетка: {thread.mention}",
+                ephemeral=True
+            )
+            
+        except Exception as e:
+            print(f"Ошибка при создании меню: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"❌ Произошла ошибка: `{str(e)}`", ephemeral=True)
+
 
 class DeclineReasonModal(Modal, title="Причина отклонения"):
     def __init__(self, applicant: discord.Member, application_embed: discord.Embed, interaction: discord.Interaction):
@@ -499,6 +786,24 @@ class StartApplicationButton(View):
 
 # --- КОМАНДЫ БОТА ---
 
+@bot.command(name="menu")
+async def menu_command(ctx):
+    """Создать меню активности"""
+    try:
+        await ctx.message.delete()
+    except:
+        pass
+    
+    if ctx.author.id == OWNER_ID:
+        pass
+    else:
+        user_roles = [role.id for role in ctx.author.roles]
+        if not any(role_id in user_roles for role_id in MENU_ADMIN_ROLES):
+            await ctx.send("❌ У вас нет прав использовать эту команду.", ephemeral=True)
+            return
+    
+    await ctx.send_modal(MenuCreationModal())
+
 @bot.command(name="заявка")
 async def send_application_embed(ctx):
     try:
@@ -644,6 +949,82 @@ async def rename_user_logic(ctx_or_interaction, member: discord.Member, new_nick
         print(f"Ошибка при изменении никнейма: {e}")
         await response_method(f"❌ Произошла ошибка при изменении никнейма: `{str(e)}`", ephemeral=True)
 
+# --- ОБРАБОТКА СООБЩЕНИЙ "+" В ВЕТКЕ МЕНЮ ---
+
+@bot.event
+async def on_message(message):
+    # Обработка "+" для регистрации в меню активности
+    if message.content.strip().lower() in ['+', 'плюс']:
+        # Проверяем, является ли канал веткой меню
+        for menu_id, data in menu_data.items():
+            if data.get('thread') and message.channel.id == data['thread'].id:
+                if data['is_active']:
+                    user_id = message.author.id
+                    
+                    # Добавляем в список "ОСНОВА"
+                    data['will_attend'][user_id] = message.id
+                    plus_messages[message.id] = menu_id
+                    
+                    # Обновляем эмбед
+                    await update_menu_embed(data)
+                    
+                    # Удаляем сообщение "+"
+                    try:
+                        await message.delete()
+                    except:
+                        pass
+                    
+                    break
+    
+    await bot.process_commands(message)
+
+@bot.event
+async def on_message_delete(message):
+    # Обработка удаления "+" для переноса в "Убрали плюс"
+    if message.id in plus_messages:
+        menu_id = plus_messages[message.id]
+        data = menu_data.get(menu_id)
+        
+        if data:
+            user_id = message.author.id
+            
+            # Удаляем из "ОСНОВА" и добавляем в "Убрали плюс"
+            if user_id in data['will_attend']:
+                del data['will_attend'][user_id]
+            data['removed'].add(user_id)
+            
+            # Удаляем из хранилища сообщений
+            del plus_messages[message.id]
+            
+            # Обновляем эмбед
+            await update_menu_embed(data)
+
+async def update_menu_embed(data):
+    message = data['message']
+    will_attend = data['will_attend']
+    removed = data['removed']
+    
+    embed = message.embeds[0]
+    
+    will_list = []
+    removed_list = []
+    
+    for user_id in will_attend.keys():
+        will_list.append(f"<@{user_id}>")
+    
+    for user_id in removed:
+        removed_list.append(f"<@{user_id}>")
+    
+    for i, field in enumerate(embed.fields):
+        if "ОСНОВА" in field.name:
+            value = "\n".join(will_list) if will_list else "*Пока нет записавшихся*"
+            embed.set_field_at(i, name=f"✅ОСНОВА ({len(will_list)})", value=value, inline=True)
+        elif "УБРАЛИ ПЛЮС" in field.name:
+            value = "\n".join(removed_list) if removed_list else "*Пока нет записавшихся*"
+            embed.set_field_at(i, name=f"❌УБРАЛИ ПЛЮС ({len(removed_list)})", value=value, inline=True)
+    
+    await message.edit(embed=embed)
+
 @bot.event
 async def on_ready():
     # ✅ УСТАНОВКА СТАТУСА "НЕ БЕСПОКОИТЬ"
@@ -662,6 +1043,7 @@ async def on_ready():
     
     bot.add_view(StartApplicationButton())
     bot.add_view(PrivateChannelButtons())
+    bot.add_view(MenuView())
     print('✅ Постоянные кнопки зарегистрированы')
     
     try:
