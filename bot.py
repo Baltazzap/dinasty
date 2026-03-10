@@ -67,14 +67,13 @@ MENU_ADMIN_ROLES = [
 ]
 
 # --- ХРАНИЛИЩЕ ДАННЫХ МЕНЮ АКТИВНОСТИ ---
-menu_data = {}  # {message_id: {'will_attend': {user_id: message_id}, 'removed': set(), 'thread': Thread, 'start_time': str, 'is_active': bool}}
-plus_messages = {}  # {message_id: menu_message_id}
+menu_data = {}
+plus_messages = {}
 
 # --- НАСТРОЙКИ БОТА ---
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
-intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
@@ -147,10 +146,7 @@ class MenuView(View):
                 await interaction.response.send_message("❌ Данные меню не найдены.", ephemeral=True)
                 return
             
-            # Обновляем статус
-            data['is_active'] = False
-            
-            # Удаляем ветку
+            # ✅ УДАЛЯЕМ ВЕТКУ ПОЛНОСТЬЮ
             if data.get('thread'):
                 try:
                     await data['thread'].delete()
@@ -159,14 +155,21 @@ class MenuView(View):
                     print(f"Не удалось удалить ветку: {thread_error}")
                 data['thread'] = None
             
-            # Обновляем эмбед
+            # ✅ Очищаем столбцы
+            data['will_attend'].clear()
+            data['removed'].clear()
+            data['is_active'] = False
+            
+            # ✅ Обновляем эмбед
             embed = interaction.message.embeds[0]
             
-            # Обновляем статус
             for i, field in enumerate(embed.fields):
-                if "Статус" in field.name:
-                    embed.set_field_at(i, name="**Статус**", value="🔴Сбор закрыт", inline=False)
-                    break
+                if "ОСНОВА" in field.name:
+                    embed.set_field_at(i, name="✅ОСНОВА (0)", value="*Сбор завершен*", inline=True)
+                elif "УБРАЛИ ПЛЮС" in field.name:
+                    embed.set_field_at(i, name="❌УБРАЛИ ПЛЮС (0)", value="*Сбор завершен*", inline=True)
+                elif "Статус" in field.name:
+                    embed.set_field_at(i, name="**Статус**", value="🔴Сбор закрыт (ветка удалена)", inline=False)
             
             await interaction.message.edit(embed=embed, view=MenuView())
             
@@ -185,7 +188,6 @@ class MenuView(View):
                 await interaction.response.send_message("❌ Данные меню не найдены.", ephemeral=True)
                 return
             
-            # Обновляем статус
             data['is_active'] = True
             
             # Создаем новую ветку
@@ -195,13 +197,10 @@ class MenuView(View):
             )
             data['thread'] = thread
             
-            # Обновляем время
             data['start_time'] = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
             
-            # Обновляем эмбед
             embed = interaction.message.embeds[0]
             
-            # Обновляем поля
             for i, field in enumerate(embed.fields):
                 if "Начало" in field.name:
                     embed.set_field_at(i, name="**Начало**", value=data['start_time'], inline=False)
@@ -210,7 +209,6 @@ class MenuView(View):
             
             await interaction.message.edit(embed=embed, view=MenuView())
             
-            # Отправляем сообщение в ветку
             await thread.send(
                 f"📝 **Пиши `+` в ветку, что бы записаться**\n\n"
                 f"Ветка возобновлена: {data['start_time']}"
@@ -331,21 +329,18 @@ class MenuCreationModal(Modal, title="Создание меню активнос
             
             message = await interaction.channel.send(embed=embed, view=view)
             
-            # Создаем ветку
             thread = await message.create_thread(
                 name="Плюсы",
                 reason="Создание меню активности"
             )
             
-            # Отправляем инструкцию в ветку
             await thread.send(
                 f"📝 **Пиши `+` в ветку, что бы записаться**\n\n"
                 f"Ветка создана: {start_time}"
             )
             
-            # Сохраняем данные
             menu_data[message.id] = {
-                'will_attend': {},  # {user_id: message_id}
+                'will_attend': {},
                 'removed': set(),
                 'message': message,
                 'thread': thread,
@@ -786,10 +781,8 @@ class StartApplicationButton(View):
 
 # --- КОМАНДЫ БОТА ---
 
-# ✅ СЛЭШ-КОМАНДА /menu (вместо !menu)
 @bot.tree.command(name="menu", description="Создать меню активности")
 async def menu_command(interaction: discord.Interaction):
-    """Создать меню активности"""
     if not check_menu_admin(interaction.user):
         await interaction.response.send_message("❌ У вас нет прав использовать эту команду.", ephemeral=True)
         return
@@ -947,24 +940,17 @@ async def rename_user_logic(ctx_or_interaction, member: discord.Member, new_nick
 async def on_message(message):
     # Обработка "+" для регистрации в меню активности
     if message.content.strip().lower() in ['+', 'плюс']:
-        # Проверяем, является ли канал веткой меню
         for menu_id, data in menu_data.items():
             if data.get('thread') and message.channel.id == data['thread'].id:
                 if data['is_active']:
                     user_id = message.author.id
                     
-                    # Добавляем в список "ОСНОВА"
                     data['will_attend'][user_id] = message.id
                     plus_messages[message.id] = menu_id
                     
-                    # Обновляем эмбед
                     await update_menu_embed(data)
                     
-                    # Удаляем сообщение "+"
-                    try:
-                        await message.delete()
-                    except:
-                        pass
+                    # ✅ СООБЩЕНИЕ НЕ УДАЛЯЕТСЯ (убрано удаление)
                     
                     break
     
@@ -972,7 +958,6 @@ async def on_message(message):
 
 @bot.event
 async def on_message_delete(message):
-    # Обработка удаления "+" для переноса в "Убрали плюс"
     if message.id in plus_messages:
         menu_id = plus_messages[message.id]
         data = menu_data.get(menu_id)
@@ -980,15 +965,12 @@ async def on_message_delete(message):
         if data:
             user_id = message.author.id
             
-            # Удаляем из "ОСНОВА" и добавляем в "Убрали плюс"
             if user_id in data['will_attend']:
                 del data['will_attend'][user_id]
             data['removed'].add(user_id)
             
-            # Удаляем из хранилища сообщений
             del plus_messages[message.id]
             
-            # Обновляем эмбед
             await update_menu_embed(data)
 
 async def update_menu_embed(data):
@@ -1019,7 +1001,6 @@ async def update_menu_embed(data):
 
 @bot.event
 async def on_ready():
-    # ✅ УСТАНОВКА СТАТУСА "НЕ БЕСПОКОИТЬ"
     await bot.change_presence(status=discord.Status.dnd)
     
     print(f'Бот запущен как {bot.user}')
