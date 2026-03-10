@@ -786,23 +786,15 @@ class StartApplicationButton(View):
 
 # --- КОМАНДЫ БОТА ---
 
-@bot.command(name="menu")
-async def menu_command(ctx):
+# ✅ СЛЭШ-КОМАНДА /menu (вместо !menu)
+@bot.tree.command(name="menu", description="Создать меню активности")
+async def menu_command(interaction: discord.Interaction):
     """Создать меню активности"""
-    try:
-        await ctx.message.delete()
-    except:
-        pass
+    if not check_menu_admin(interaction.user):
+        await interaction.response.send_message("❌ У вас нет прав использовать эту команду.", ephemeral=True)
+        return
     
-    if ctx.author.id == OWNER_ID:
-        pass
-    else:
-        user_roles = [role.id for role in ctx.author.roles]
-        if not any(role_id in user_roles for role_id in MENU_ADMIN_ROLES):
-            await ctx.send("❌ У вас нет прав использовать эту команду.", ephemeral=True)
-            return
-    
-    await ctx.send_modal(MenuCreationModal())
+    await interaction.response.send_modal(MenuCreationModal())
 
 @bot.command(name="заявка")
 async def send_application_embed(ctx):
