@@ -66,9 +66,10 @@ MENU_ADMIN_ROLES = [
     1449567765810778205
 ]
 
-# --- ХРАНИЛИЩЕ ДАННЫХ МЕНЮ АКТИВНОСТИ ---
+# --- ХРАНИЛИЩЕ ДАННЫХ ---
 menu_data = {}
 plus_messages = {}
+user_channels = {}  # ✅ Хранилище веток пользователей: {user_id: channel_id}
 
 # --- НАСТРОЙКИ БОТА ---
 intents = discord.Intents.default()
@@ -146,7 +147,6 @@ class MenuView(View):
                 await interaction.response.send_message("❌ Данные меню не найдены.", ephemeral=True)
                 return
             
-            # ✅ УДАЛЯЕМ ВЕТКУ ПОЛНОСТЬЮ
             if data.get('thread'):
                 try:
                     await data['thread'].delete()
@@ -155,12 +155,10 @@ class MenuView(View):
                     print(f"Не удалось удалить ветку: {thread_error}")
                 data['thread'] = None
             
-            # ✅ Очищаем столбцы
             data['will_attend'].clear()
             data['removed'].clear()
             data['is_active'] = False
             
-            # ✅ Обновляем эмбед
             embed = interaction.message.embeds[0]
             
             for i, field in enumerate(embed.fields):
@@ -190,7 +188,6 @@ class MenuView(View):
             
             data['is_active'] = True
             
-            # Создаем новую ветку
             thread = await interaction.message.create_thread(
                 name="Плюсы",
                 reason="Возобновление сбора активности"
@@ -592,6 +589,26 @@ class PrivateChannelButtons(View):
     @discord.ui.button(label="🔒 Создать личную ветку", style=discord.ButtonStyle.blurple, custom_id="create_private_channel")
     async def create_channel_callback(self, interaction: discord.Interaction, button: Button):
         try:
+            user_id = interaction.user.id
+            
+            # ✅ ПРОВЕРКА: ЕСТЬ ЛИ УЖЕ ВЕТКА У ПОЛЬЗОВАТЕЛЯ
+            if user_id in user_channels:
+                channel_id = user_channels[user_id]
+                channel = interaction.guild.get_channel(channel_id)
+                
+                if channel:
+                    # Ветка существует - показываем ссылку
+                    await interaction.response.send_message(
+                        f"⚠️ **У вас уже есть личная ветка!**\n\n"
+                        f"📁 Ваш канал: {channel.mention}\n\n"
+                        f"Используйте его для общения.",
+                        ephemeral=True
+                    )
+                    return
+                else:
+                    # Канал удалён - очищаем запись
+                    del user_channels[user_id]
+            
             category = interaction.guild.get_channel(PRIVATE_CHANNEL_CATEGORY_ID)
             
             if not category:
@@ -620,6 +637,9 @@ class PrivateChannelButtons(View):
                 if role:
                     await new_channel.set_permissions(role, view_channel=True, send_messages=True)
             
+            # ✅ СОХРАНЯЕМ ВЕТКУ ПОЛЬЗОВАТЕЛЯ
+            user_channels[user_id] = new_channel.id
+            
             embed = discord.Embed(
                 title="🔒 Личная ветка создана",
                 description=f"Добро пожаловать в вашу личную ветку, {interaction.user.mention}!\n\nЭтот канал виден только вам и администрации.",
@@ -630,7 +650,8 @@ class PrivateChannelButtons(View):
             embed.add_field(name="🏷️ Серверный ник", value=server_nickname, inline=True)
             embed.set_footer(text=f"ID канала: {new_channel.id}")
             
-            await new_channel.send(embed=embed)
+            view_with_close = PrivateChannelCloseButton()
+            await new_channel.send(embed=embed, view=view_with_close)
             
             await interaction.response.send_message(
                 f"✅ Ваша личная ветка создана: {new_channel.mention}",
@@ -641,6 +662,42 @@ class PrivateChannelButtons(View):
             print(f"Ошибка при создании личной ветки: {e}")
             if not interaction.response.is_done():
                 await interaction.response.send_message(f"❌ Произошла ошибка при создании ветки: `{str(e)}`", ephemeral=True)
+
+
+class PrivateChannelCloseButton(View):
+    """Кнопка закрытия личной ветки"""
+    def __init__(self):
+        super().__init__(timeout=None)
+    
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id == OWNER_ID:
+            return True
+        
+        user_roles = [role.id for role in interaction.user.roles]
+        if not any(role_id in user_roles for role_id in ADMIN_ROLES):
+            await interaction.response.send_message("❌ У вас нет прав закрыть эту ветку.", ephemeral=True)
+            return False
+        return True
+    
+    @discord.ui.button(label="🔒 Закрыть ветку", style=discord.ButtonStyle.red, custom_id="close_private_channel")
+    async def close_callback(self, interaction: discord.Interaction, button: Button):
+        try:
+            channel = interaction.channel
+            
+            # ✅ УДАЛЯЕМ ИЗ ХРАНИЛИЩА
+            for user_id, chan_id in list(user_channels.items()):
+                if chan_id == channel.id:
+                    del user_channels[user_id]
+                    break
+            
+            await interaction.response.send_message("🔒 Ветка закрывается через 5 секунд...", ephemeral=True)
+            await asyncio.sleep(5)
+            await channel.delete()
+            
+        except Exception as e:
+            print(f"Ошибка при закрытии ветки: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"❌ Произошла ошибка: `{str(e)}`", ephemeral=True)
 
 
 class ApplicationModal(Modal, title="Анкета в семью"):
@@ -938,7 +995,6 @@ async def rename_user_logic(ctx_or_interaction, member: discord.Member, new_nick
 
 @bot.event
 async def on_message(message):
-    # Обработка "+" для регистрации в меню активности
     if message.content.strip().lower() in ['+', 'плюс']:
         for menu_id, data in menu_data.items():
             if data.get('thread') and message.channel.id == data['thread'].id:
@@ -949,8 +1005,6 @@ async def on_message(message):
                     plus_messages[message.id] = menu_id
                     
                     await update_menu_embed(data)
-                    
-                    # ✅ СООБЩЕНИЕ НЕ УДАЛЯЕТСЯ (убрано удаление)
                     
                     break
     
@@ -1013,9 +1067,11 @@ async def on_ready():
     print(f'Роль для выдачи 1: {ROLE_ADD_1}')
     print(f'Роль для выдачи 2: {ROLE_ADD_2}')
     print(f'Роль для удаления: {ROLE_REMOVE}')
+    print(f'Хранилище веток пользователей: {len(user_channels)} записей')
     
     bot.add_view(StartApplicationButton())
     bot.add_view(PrivateChannelButtons())
+    bot.add_view(PrivateChannelCloseButton())
     bot.add_view(MenuView())
     print('✅ Постоянные кнопки зарегистрированы')
     
