@@ -33,7 +33,7 @@ MENU_ADMIN_ROLES = [1449567765810778211, 1449567765810778210, 144956776581077820
 
 # --- ХРАНИЛИЩЕ ДАННЫХ ---
 menu_data = {}
-plus_messages = {}  # {message_id: menu_id}
+plus_messages = {}
 user_channels = {}
 
 # --- НАСТРОЙКИ БОТА ---
@@ -67,13 +67,7 @@ class EditMenuModal(Modal, title="Редактировать меню"):
         super().__init__()
         self.menu_id = menu_id
         self.current_title = current_title
-        
-        self.menu_title = TextInput(
-            label="Название меню",
-            default=current_title,
-            style=discord.TextStyle.short,
-            max_length=100
-        )
+        self.menu_title = TextInput(label="Название меню", default=current_title, style=discord.TextStyle.short, max_length=100)
         self.add_item(self.menu_title)
 
     async def on_submit(self, interaction: discord.Interaction):
@@ -82,7 +76,6 @@ class EditMenuModal(Modal, title="Редактировать меню"):
             if not data:
                 await interaction.response.send_message("❌ Меню не найдено.", ephemeral=True)
                 return
-            
             embed = data['message'].embeds[0]
             embed.title = self.menu_title.value
             await data['message'].edit(embed=embed)
@@ -97,10 +90,14 @@ class MenuView(View):
         super().__init__(timeout=None)
     
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if not check_menu_admin(interaction.user):
-            await interaction.response.send_message("❌ У вас нет прав управлять этим меню.", ephemeral=True)
+        try:
+            if not check_menu_admin(interaction.user):
+                await interaction.response.send_message("❌ У вас нет прав управлять этим меню.", ephemeral=True)
+                return False
+            return True
+        except Exception as e:
+            print(f"Ошибка в interaction_check: {e}")
             return False
-        return True
     
     @discord.ui.button(label="🏁 Завершить", style=discord.ButtonStyle.gray, custom_id="menu_end")
     async def end_callback(self, interaction: discord.Interaction, button: Button):
@@ -137,8 +134,12 @@ class MenuView(View):
                     embed.set_field_at(i, name="**Статус**", value="🔴Сбор закрыт (ветка удалена)", inline=False)
             
             await interaction.message.edit(embed=embed, view=MenuView())
-            await interaction.response.send_message("✅ Сбор завершен! Ветка удалена.", ephemeral=True)
+            
+            if not interaction.response.is_done():
+                await interaction.response.send_message("✅ Сбор завершен! Ветка удалена.", ephemeral=True)
+            
         except Exception as e:
+            print(f"Ошибка в end_callback: {e}")
             if not interaction.response.is_done():
                 await interaction.response.send_message(f"❌ Ошибка: `{str(e)}`", ephemeral=True)
     
@@ -169,9 +170,13 @@ class MenuView(View):
                     embed.set_field_at(i, name="**Статус**", value="🟢Сбор открыт (Пиши + в ветку)", inline=False)
             
             await interaction.message.edit(embed=embed, view=MenuView())
-            await thread.send(f"📝 **Пиши `+` в ветку, что бы записаться**\n\nВетка возобновлена: {data['start_time']}")
-            await interaction.response.send_message(f"✅ Сбор возобновлен! Ветка создана: {thread.mention}", ephemeral=True)
+            await thread.send(f"📝 **Пиши `+` в ветку, админ поставит ✅ для записи**\n\nВетка возобновлена: {data['start_time']}")
+            
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"✅ Сбор возобновлен! Ветка создана: {thread.mention}", ephemeral=True)
+            
         except Exception as e:
+            print(f"Ошибка в resume_callback: {e}")
             if not interaction.response.is_done():
                 await interaction.response.send_message(f"❌ Ошибка: `{str(e)}`", ephemeral=True)
     
@@ -187,8 +192,12 @@ class MenuView(View):
                 await interaction.response.send_message("❌ Ветка не найдена. Нажмите 'Возобновить'.", ephemeral=True)
                 return
             await thread.send("||@everyone||\n\n🔔 **Заходим в ВОЙС и в ИГРУ!**")
-            await interaction.response.send_message("✅ Все позваны в ветку!", ephemeral=True)
+            
+            if not interaction.response.is_done():
+                await interaction.response.send_message("✅ Все позваны в ветку!", ephemeral=True)
+            
         except Exception as e:
+            print(f"Ошибка в summon_callback: {e}")
             if not interaction.response.is_done():
                 await interaction.response.send_message(f"❌ Ошибка: `{str(e)}`", ephemeral=True)
     
@@ -200,8 +209,12 @@ class MenuView(View):
                 await interaction.response.send_message("❌ Данные меню не найдены.", ephemeral=True)
                 return
             embed = interaction.message.embeds[0]
-            await interaction.response.send_modal(EditMenuModal(interaction.message.id, embed.title))
+            
+            if not interaction.response.is_done():
+                await interaction.response.send_modal(EditMenuModal(interaction.message.id, embed.title))
+            
         except Exception as e:
+            print(f"Ошибка в edit_callback: {e}")
             if not interaction.response.is_done():
                 await interaction.response.send_message(f"❌ Ошибка: `{str(e)}`", ephemeral=True)
     
@@ -225,8 +238,12 @@ class MenuView(View):
                     dm_sent += 1
                 except:
                     dm_failed += 1
-            await interaction.response.send_message(f"✅ Отправлено {dm_sent} ЛС, не удалось {dm_failed}", ephemeral=True)
+            
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"✅ Отправлено {dm_sent} ЛС, не удалось {dm_failed}", ephemeral=True)
+            
         except Exception as e:
+            print(f"Ошибка в remind_callback: {e}")
             if not interaction.response.is_done():
                 await interaction.response.send_message(f"❌ Ошибка: `{str(e)}`", ephemeral=True)
 
@@ -261,8 +278,12 @@ class MenuCreationModal(Modal, title="Создание меню активнос
                 'start_time': start_time,
                 'is_active': True
             }
-            await interaction.response.send_message(f"✅ Меню активности создано!\n\nВетка: {thread.mention}", ephemeral=True)
+            
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"✅ Меню активности создано!\n\nВетка: {thread.mention}", ephemeral=True)
+            
         except Exception as e:
+            print(f"Ошибка при создании меню: {e}")
             if not interaction.response.is_done():
                 await interaction.response.send_message(f"❌ Ошибка: `{str(e)}`", ephemeral=True)
 
@@ -273,35 +294,38 @@ class DeclineReasonModal(Modal, title="Причина отклонения"):
         self.applicant = applicant
         self.application_embed = application_embed
         self.original_interaction = interaction
-        self.reason_input = TextInput(label="Укажите причину отклонения", placeholder="Например: Не подходит по возрасту / Мало опыта", style=discord.TextStyle.long, max_length=500, required=True)
+        self.reason_input = TextInput(label="Укажите причину отклонения", placeholder="Например: Не подходит по возрасту", style=discord.TextStyle.long, max_length=500, required=True)
         self.add_item(self.reason_input)
 
     async def on_submit(self, interaction: discord.Interaction):
         await self.send_to_logs_with_reason(interaction, self.reason_input.value)
 
     async def send_to_logs_with_reason(self, interaction: discord.Interaction, reason: str):
-        log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
-        if not log_channel:
-            return
-        log_embed = discord.Embed(title="❌ Заявка ОТКЛОНЕНА", color=discord.Color.red(), timestamp=discord.utils.utcnow())
-        log_embed.add_field(name="👤 Кандидат", value=self.applicant.mention, inline=True)
-        log_embed.add_field(name="🔨 Обработал", value=interaction.user.mention, inline=True)
-        log_embed.add_field(name="📝 Причина отказа", value=reason, inline=False)
-        log_embed.add_field(name="⠀", value="━━━━━━━━━━━━━━━━━━━━", inline=False)
-        if self.application_embed.fields:
-            for field in self.application_embed.fields:
-                log_embed.add_field(name=field.name, value=field.value, inline=field.inline)
-        log_embed.set_footer(text=f"ID пользователя: {self.applicant.id}")
-        if self.application_embed.author:
-            log_embed.set_author(name=self.application_embed.author.name, icon_url=self.application_embed.author.icon_url)
-        await log_channel.send(embed=log_embed)
         try:
-            await self.applicant.send(f"❌ Ваша заявка в семью была отклонена.\n📝 **Причина:** {reason}")
-        except:
-            pass
-        await self.original_interaction.followup.send("Заявка отклонена! Канал будет удален через 5 секунд.", ephemeral=True)
-        await asyncio.sleep(5)
-        await interaction.channel.delete()
+            log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
+            if not log_channel:
+                return
+            log_embed = discord.Embed(title="❌ Заявка ОТКЛОНЕНА", color=discord.Color.red(), timestamp=discord.utils.utcnow())
+            log_embed.add_field(name="👤 Кандидат", value=self.applicant.mention, inline=True)
+            log_embed.add_field(name="🔨 Обработал", value=interaction.user.mention, inline=True)
+            log_embed.add_field(name="📝 Причина отказа", value=reason, inline=False)
+            log_embed.add_field(name="⠀", value="━━━━━━━━━━━━━━━━━━━━", inline=False)
+            if self.application_embed.fields:
+                for field in self.application_embed.fields:
+                    log_embed.add_field(name=field.name, value=field.value, inline=field.inline)
+            log_embed.set_footer(text=f"ID пользователя: {self.applicant.id}")
+            if self.application_embed.author:
+                log_embed.set_author(name=self.application_embed.author.name, icon_url=self.application_embed.author.icon_url)
+            await log_channel.send(embed=log_embed)
+            try:
+                await self.applicant.send(f"❌ Ваша заявка отклонена.\n📝 **Причина:** {reason}")
+            except:
+                pass
+            await self.original_interaction.followup.send("Заявка отклонена! Канал будет удален через 5 секунд.", ephemeral=True)
+            await asyncio.sleep(5)
+            await interaction.channel.delete()
+        except Exception as e:
+            print(f"Ошибка в send_to_logs_with_reason: {e}")
 
 
 class TicketButtons(View):
@@ -311,29 +335,36 @@ class TicketButtons(View):
         self.application_embed = application_embed
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id == OWNER_ID:
+        try:
+            if interaction.user.id == OWNER_ID:
+                return True
+            user_roles = [role.id for role in interaction.user.roles]
+            if not any(role_id in user_roles for role_id in TICKET_ADMIN_ROLES):
+                await interaction.response.send_message("У вас нет прав использовать эти кнопки.", ephemeral=True)
+                return False
             return True
-        user_roles = [role.id for role in interaction.user.roles]
-        if not any(role_id in user_roles for role_id in TICKET_ADMIN_ROLES):
-            await interaction.response.send_message("У вас нет прав использовать эти кнопки.", ephemeral=True)
+        except Exception as e:
+            print(f"Ошибка в interaction_check: {e}")
             return False
-        return True
 
     async def send_to_logs(self, interaction: discord.Interaction, status: str, color: discord.Color):
-        log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
-        if not log_channel:
-            return
-        log_embed = discord.Embed(title=f"{status}", color=color, timestamp=discord.utils.utcnow())
-        log_embed.add_field(name="👤 Кандидат", value=self.applicant.mention, inline=True)
-        log_embed.add_field(name="🔨 Обработал", value=interaction.user.mention, inline=True)
-        log_embed.add_field(name="⠀", value="━━━━━━━━━━━━━━━━━━━━", inline=False)
-        if self.application_embed.fields:
-            for field in self.application_embed.fields:
-                log_embed.add_field(name=field.name, value=field.value, inline=field.inline)
-        log_embed.set_footer(text=f"ID пользователя: {self.applicant.id}")
-        if self.application_embed.author:
-            log_embed.set_author(name=self.application_embed.author.name, icon_url=self.application_embed.author.icon_url)
-        await log_channel.send(embed=log_embed)
+        try:
+            log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
+            if not log_channel:
+                return
+            log_embed = discord.Embed(title=f"{status}", color=color, timestamp=discord.utils.utcnow())
+            log_embed.add_field(name="👤 Кандидат", value=self.applicant.mention, inline=True)
+            log_embed.add_field(name="🔨 Обработал", value=interaction.user.mention, inline=True)
+            log_embed.add_field(name="⠀", value="━━━━━━━━━━━━━━━━━━━━", inline=False)
+            if self.application_embed.fields:
+                for field in self.application_embed.fields:
+                    log_embed.add_field(name=field.name, value=field.value, inline=field.inline)
+            log_embed.set_footer(text=f"ID пользователя: {self.applicant.id}")
+            if self.application_embed.author:
+                log_embed.set_author(name=self.application_embed.author.name, icon_url=self.application_embed.author.icon_url)
+            await log_channel.send(embed=log_embed)
+        except Exception as e:
+            print(f"Ошибка в send_to_logs: {e}")
 
     def get_nickname_from_embed(self):
         if self.application_embed and self.application_embed.fields:
@@ -354,7 +385,9 @@ class TicketButtons(View):
                     nickname_changed = True
                 except Exception as nick_error:
                     print(f"Не удалось изменить никнейм: {nick_error}")
+            
             await self.send_to_logs(interaction, "✅ Заявка ОДОБРЕНА", discord.Color.green())
+            
             try:
                 role1 = interaction.guild.get_role(ROLE_ADD_1)
                 role2 = interaction.guild.get_role(ROLE_ADD_2)
@@ -367,22 +400,29 @@ class TicketButtons(View):
                     await self.applicant.remove_roles(role_remove, reason="Заявка в семью одобрена")
             except Exception as e:
                 print(f"Ошибка при управлении ролями: {e}")
+            
             msg = "Заявка принята! "
             if nickname_changed:
                 msg += f"Никнейм изменён на `{new_nickname}`. "
             msg += "Роли выданы. Канал будет удален через 5 секунд."
-            await interaction.response.send_message(msg, ephemeral=True)
+            
+            if not interaction.response.is_done():
+                await interaction.response.send_message(msg, ephemeral=True)
             await asyncio.sleep(5)
             await interaction.channel.delete()
+            
         except Exception as e:
+            print(f"Ошибка в accept_callback: {e}")
             if not interaction.response.is_done():
                 await interaction.response.send_message("Произошла ошибка при обработке.", ephemeral=True)
 
     @discord.ui.button(label="Отклонить", style=discord.ButtonStyle.red, custom_id="decline_app")
     async def decline_callback(self, interaction: discord.Interaction, button: Button):
         try:
-            await interaction.response.send_modal(DeclineReasonModal(self.applicant, self.application_embed, interaction))
+            if not interaction.response.is_done():
+                await interaction.response.send_modal(DeclineReasonModal(self.applicant, self.application_embed, interaction))
         except Exception as e:
+            print(f"Ошибка в decline_callback: {e}")
             if not interaction.response.is_done():
                 await interaction.response.send_message("Произошла ошибка при обработке.", ephemeral=True)
 
@@ -390,8 +430,10 @@ class TicketButtons(View):
     async def interview_callback(self, interaction: discord.Interaction, button: Button):
         try:
             voice_mention = f"<#{VOICE_CHANNEL_ID}>"
-            await interaction.response.send_message(f"{self.applicant.mention}, Вас вызывают на собеседование! Зайдите в голосовой канал {voice_mention}", ephemeral=False)
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"{self.applicant.mention}, Вас вызывают на собеседование! Зайдите в голосовой канал {voice_mention}", ephemeral=False)
         except Exception as e:
+            print(f"Ошибка в interview_callback: {e}")
             if not interaction.response.is_done():
                 await interaction.response.send_message("Произошла ошибка при обработке.", ephemeral=True)
 
@@ -417,10 +459,14 @@ class TicketButtons(View):
                     await log_channel.send(embed=log_embed)
                 except Exception as log_error:
                     print(f"Не удалось отправить в логи: {log_error}")
-            await interaction.response.send_message("Заявка закрыта! Канал будет удален через 5 секунд.", ephemeral=True)
+            
+            if not interaction.response.is_done():
+                await interaction.response.send_message("Заявка закрыта! Канал будет удален через 5 секунд.", ephemeral=True)
             await asyncio.sleep(5)
             await interaction.channel.delete()
+            
         except Exception as e:
+            print(f"Ошибка в close_callback: {e}")
             try:
                 if not interaction.response.is_done():
                     await interaction.response.send_message("Произошла ошибка, но канал будет удален.", ephemeral=True)
@@ -444,17 +490,20 @@ class PrivateChannelButtons(View):
                 channel_id = user_channels[user_id]
                 channel = interaction.guild.get_channel(channel_id)
                 if channel:
-                    await interaction.response.send_message(f"⚠️ **У вас уже есть личная ветка!**\n\n📁 Ваш канал: {channel.mention}", ephemeral=True)
+                    if not interaction.response.is_done():
+                        await interaction.response.send_message(f"⚠️ **У вас уже есть личная ветка!**\n\n📁 Ваш канал: {channel.mention}", ephemeral=True)
                     return
                 else:
                     del user_channels[user_id]
             
             category = interaction.guild.get_channel(PRIVATE_CHANNEL_CATEGORY_ID)
             if not category:
-                await interaction.response.send_message("❌ Категория для личных веток не найдена.", ephemeral=True)
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ Категория для личных веток не найдена.", ephemeral=True)
                 return
             if not isinstance(category, discord.CategoryChannel):
-                await interaction.response.send_message("❌ Указанный ID не является категорией.", ephemeral=True)
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ Указанный ID не является категорией.", ephemeral=True)
                 return
             
             server_nickname = interaction.user.display_name
@@ -479,8 +528,12 @@ class PrivateChannelButtons(View):
             
             view_with_close = PrivateChannelCloseButton()
             await new_channel.send(embed=embed, view=view_with_close)
-            await interaction.response.send_message(f"✅ Ваша личная ветка создана: {new_channel.mention}", ephemeral=True)
+            
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"✅ Ваша личная ветка создана: {new_channel.mention}", ephemeral=True)
+            
         except Exception as e:
+            print(f"Ошибка при создании личной ветки: {e}")
             if not interaction.response.is_done():
                 await interaction.response.send_message(f"❌ Ошибка: `{str(e)}`", ephemeral=True)
 
@@ -490,13 +543,17 @@ class PrivateChannelCloseButton(View):
         super().__init__(timeout=None)
     
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id == OWNER_ID:
+        try:
+            if interaction.user.id == OWNER_ID:
+                return True
+            user_roles = [role.id for role in interaction.user.roles]
+            if not any(role_id in user_roles for role_id in ADMIN_ROLES):
+                await interaction.response.send_message("❌ У вас нет прав закрыть эту ветку.", ephemeral=True)
+                return False
             return True
-        user_roles = [role.id for role in interaction.user.roles]
-        if not any(role_id in user_roles for role_id in ADMIN_ROLES):
-            await interaction.response.send_message("❌ У вас нет прав закрыть эту ветку.", ephemeral=True)
+        except Exception as e:
+            print(f"Ошибка в interaction_check: {e}")
             return False
-        return True
     
     @discord.ui.button(label="🔒 Закрыть ветку", style=discord.ButtonStyle.red, custom_id="close_private_channel")
     async def close_callback(self, interaction: discord.Interaction, button: Button):
@@ -506,10 +563,14 @@ class PrivateChannelCloseButton(View):
                 if chan_id == channel.id:
                     del user_channels[user_id]
                     break
-            await interaction.response.send_message("🔒 Ветка закрывается через 5 секунд...", ephemeral=True)
+            
+            if not interaction.response.is_done():
+                await interaction.response.send_message("🔒 Ветка закрывается через 5 секунд...", ephemeral=True)
             await asyncio.sleep(5)
             await channel.delete()
+            
         except Exception as e:
+            print(f"Ошибка при закрытии ветки: {e}")
             if not interaction.response.is_done():
                 await interaction.response.send_message(f"❌ Ошибка: `{str(e)}`", ephemeral=True)
 
@@ -532,10 +593,12 @@ class ApplicationModal(Modal, title="Анкета в семью"):
         try:
             category = interaction.guild.get_channel(CATEGORY_ID)
             if not category:
-                await interaction.response.send_message("Ошибка: Категория для заявок не найдена.", ephemeral=True)
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("Ошибка: Категория для заявок не найдена.", ephemeral=True)
                 return
             if not isinstance(category, discord.CategoryChannel):
-                await interaction.response.send_message("Ошибка: Указанный ID не является категорией.", ephemeral=True)
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("Ошибка: Указанный ID не является категорией.", ephemeral=True)
                 return
 
             channel_name = f"заявка-{interaction.user.name}"
@@ -569,12 +632,16 @@ class ApplicationModal(Modal, title="Анкета в семью"):
             
             view = TicketButtons(interaction.user, app_embed)
             await msg.edit(view=view)
-            await interaction.response.send_message(f"Ваша заявка отправлена! Проверьте канал {new_channel.mention}", ephemeral=True)
+            
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"Ваша заявка отправлена! Проверьте канал {new_channel.mention}", ephemeral=True)
+            
         except Exception as e:
             error_trace = traceback.format_exc()
             print(f"=== ОШИБКА ===\n{interaction.user.name}\n{e}\n{error_trace}")
             if not interaction.response.is_done():
                 await interaction.response.send_message("Произошла ошибка при создании канала.", ephemeral=True)
+
 
 class StartApplicationButton(View):
     def __init__(self):
@@ -583,21 +650,29 @@ class StartApplicationButton(View):
     @discord.ui.button(label="📩 Подать заявку в семью", style=discord.ButtonStyle.green, custom_id="start_app_btn")
     async def button_callback(self, interaction: discord.Interaction, button: Button):
         try:
-            await interaction.response.send_modal(ApplicationModal())
+            if not interaction.response.is_done():
+                await interaction.response.send_modal(ApplicationModal())
         except discord.errors.InteractionResponded:
             pass
         except Exception as e:
+            print(f"Ошибка в button_callback: {e}")
             if not interaction.response.is_done():
                 await interaction.response.send_message("Произошла ошибка при открытии формы.", ephemeral=True)
+
 
 # --- КОМАНДЫ БОТА ---
 
 @bot.tree.command(name="menu", description="Создать меню активности")
 async def menu_command(interaction: discord.Interaction):
-    if not check_menu_admin(interaction.user):
-        await interaction.response.send_message("❌ У вас нет прав использовать эту команду.", ephemeral=True)
-        return
-    await interaction.response.send_modal(MenuCreationModal())
+    try:
+        if not check_menu_admin(interaction.user):
+            await interaction.response.send_message("❌ У вас нет прав использовать эту команду.", ephemeral=True)
+            return
+        await interaction.response.send_modal(MenuCreationModal())
+    except Exception as e:
+        print(f"Ошибка в menu_command: {e}")
+        if not interaction.response.is_done():
+            await interaction.response.send_message(f"❌ Ошибка: `{str(e)}`", ephemeral=True)
 
 @bot.command(name="заявка")
 async def send_application_embed(ctx):
@@ -640,18 +715,23 @@ async def private_channel_command(ctx):
 
 @bot.tree.command(name="ветка", description="Создать эмбед для создания личной ветки")
 async def private_channel_slash(interaction: discord.Interaction):
-    if interaction.user.id == OWNER_ID:
-        pass
-    else:
-        user_roles = [role.id for role in interaction.user.roles]
-        if not any(role_id in user_roles for role_id in ADMIN_ROLES):
-            await interaction.response.send_message("❌ У вас нет прав использовать эту команду.", ephemeral=True)
-            return
-    embed = discord.Embed(title="🔒 Личная ветка", description="Нажмите на кнопку ниже, чтобы создать свою личную ветку.", color=discord.Color.blurple())
-    embed.add_field(name="📁 Категория", value=f"<#{PRIVATE_CHANNEL_CATEGORY_ID}>", inline=True)
-    embed.add_field(name="👥 Доступ", value="Только вы и администрация", inline=True)
-    view = PrivateChannelButtons()
-    await interaction.response.send_message(embed=embed, view=view)
+    try:
+        if interaction.user.id == OWNER_ID:
+            pass
+        else:
+            user_roles = [role.id for role in interaction.user.roles]
+            if not any(role_id in user_roles for role_id in ADMIN_ROLES):
+                await interaction.response.send_message("❌ У вас нет прав использовать эту команду.", ephemeral=True)
+                return
+        embed = discord.Embed(title="🔒 Личная ветка", description="Нажмите на кнопку ниже, чтобы создать свою личную ветку.", color=discord.Color.blurple())
+        embed.add_field(name="📁 Категория", value=f"<#{PRIVATE_CHANNEL_CATEGORY_ID}>", inline=True)
+        embed.add_field(name="👥 Доступ", value="Только вы и администрация", inline=True)
+        view = PrivateChannelButtons()
+        await interaction.response.send_message(embed=embed, view=view)
+    except Exception as e:
+        print(f"Ошибка в private_channel_slash: {e}")
+        if not interaction.response.is_done():
+            await interaction.response.send_message(f"❌ Ошибка: `{str(e)}`", ephemeral=True)
 
 @bot.command(name="rename")
 async def rename_user_prefix(ctx, member: discord.Member, *, new_nickname: str):
@@ -667,29 +747,29 @@ async def rename_user_slash(interaction: discord.Interaction, member: discord.Me
     await rename_user_logic(interaction, member, new_nickname, is_slash=True)
 
 async def rename_user_logic(ctx_or_interaction, member: discord.Member, new_nickname: str, is_slash: bool = False):
-    if is_slash:
-        author = ctx_or_interaction.user
-        response_method = ctx_or_interaction.response.send_message
-    else:
-        author = ctx_or_interaction.author
-        response_method = ctx_or_interaction.send
-    if author.id == OWNER_ID:
-        pass
-    else:
-        user_roles = [role.id for role in author.roles]
-        if not any(role_id in user_roles for role_id in ADMIN_ROLES):
-            await response_method("❌ У вас нет прав использовать эту команду.", ephemeral=True)
-            return
-    if member == ctx_or_interaction.guild.owner:
-        await response_method("❌ Нельзя изменить никнейм владельца сервера.", ephemeral=True)
-        return
-    if member == ctx_or_interaction.guild.me:
-        await response_method("❌ Нельзя изменить никнейм самого бота.", ephemeral=True)
-        return
-    if len(new_nickname) > 32:
-        await response_method("❌ Никнейм не может быть длиннее 32 символов.", ephemeral=True)
-        return
     try:
+        if is_slash:
+            author = ctx_or_interaction.user
+            response_method = ctx_or_interaction.response.send_message
+        else:
+            author = ctx_or_interaction.author
+            response_method = ctx_or_interaction.send
+        if author.id == OWNER_ID:
+            pass
+        else:
+            user_roles = [role.id for role in author.roles]
+            if not any(role_id in user_roles for role_id in ADMIN_ROLES):
+                await response_method("❌ У вас нет прав использовать эту команду.", ephemeral=True)
+                return
+        if member == ctx_or_interaction.guild.owner:
+            await response_method("❌ Нельзя изменить никнейм владельца сервера.", ephemeral=True)
+            return
+        if member == ctx_or_interaction.guild.me:
+            await response_method("❌ Нельзя изменить никнейм самого бота.", ephemeral=True)
+            return
+        if len(new_nickname) > 32:
+            await response_method("❌ Никнейм не может быть длиннее 32 символов.", ephemeral=True)
+            return
         await member.edit(nick=new_nickname)
         embed = discord.Embed(title="✅ Никнейм изменён", color=discord.Color.green(), timestamp=discord.utils.utcnow())
         embed.add_field(name="👤 Пользователь", value=member.mention, inline=True)
@@ -701,160 +781,144 @@ async def rename_user_logic(ctx_or_interaction, member: discord.Member, new_nick
     except Exception as e:
         await response_method(f"❌ Ошибка: `{str(e)}`", ephemeral=True)
 
+
 # --- ОБРАБОТКА РЕАКЦИЙ НА "+" В ВЕТКЕ МЕНЮ ---
 
 @bot.event
 async def on_raw_reaction_add(payload):
-    """Обработка реакции ✅ на сообщение с +"""
-    if str(payload.emoji) != '✅':
-        return
-    
-    guild = bot.get_guild(payload.guild_id)
-    if not guild:
-        return
-    
-    user = guild.get_member(payload.user_id)
-    if not user:
-        return
-    
-    # ✅ ПРОВЕРКА: ТОЛЬКО АДМИНЫ МОГУТ СТАВИТЬ ГАЛОЧКУ
-    if not check_menu_admin(user):
-        return
-    
-    # Ищем сообщение в хранилище plus_messages
-    if payload.message_id not in plus_messages:
-        return
-    
-    menu_id = plus_messages[payload.message_id]
-    data = menu_data.get(menu_id)
-    if not data:
-        return
-    
-    # Получаем автора сообщения с +
-    channel = guild.get_channel(payload.channel_id)
-    if not channel:
-        return
-    
     try:
-        message = await channel.fetch_message(payload.message_id)
-        plus_author_id = message.author.id
-        
-        # Добавляем в ОСНОВУ
-        data['will_attend'][plus_author_id] = payload.message_id
-        
-        # Удаляем реакцию (чтобы не дублировалась)
+        if str(payload.emoji) != '✅':
+            return
+        guild = bot.get_guild(payload.guild_id)
+        if not guild:
+            return
+        user = guild.get_member(payload.user_id)
+        if not user:
+            return
+        if not check_menu_admin(user):
+            return
+        if payload.message_id not in plus_messages:
+            return
+        menu_id = plus_messages[payload.message_id]
+        data = menu_data.get(menu_id)
+        if not data:
+            return
+        channel = guild.get_channel(payload.channel_id)
+        if not channel:
+            return
         try:
-            await message.remove_reaction('✅', user)
-        except:
-            pass
-        
-        await update_menu_embed(data)
-        
+            message = await channel.fetch_message(payload.message_id)
+            plus_author_id = message.author.id
+            data['will_attend'][plus_author_id] = payload.message_id
+            try:
+                await message.remove_reaction('✅', user)
+            except:
+                pass
+            await update_menu_embed(data)
+        except Exception as e:
+            print(f"Ошибка при обработке реакции: {e}")
     except Exception as e:
-        print(f"Ошибка при обработке реакции: {e}")
+        print(f"Ошибка в on_raw_reaction_add: {e}")
 
 @bot.event
 async def on_raw_reaction_remove(payload):
-    """Обработка удаления реакции ✅"""
-    if str(payload.emoji) != '✅':
-        return
-    
-    guild = bot.get_guild(payload.guild_id)
-    if not guild:
-        return
-    
-    if payload.message_id not in plus_messages:
-        return
-    
-    menu_id = plus_messages[payload.message_id]
-    data = menu_data.get(menu_id)
-    if not data:
-        return
-    
-    channel = guild.get_channel(payload.channel_id)
-    if not channel:
-        return
-    
     try:
-        message = await channel.fetch_message(payload.message_id)
-        plus_author_id = message.author.id
-        
-        # Удаляем из ОСНОВА
-        if plus_author_id in data['will_attend']:
-            del data['will_attend'][plus_author_id]
-        
-        await update_menu_embed(data)
-    except:
-        pass
+        if str(payload.emoji) != '✅':
+            return
+        guild = bot.get_guild(payload.guild_id)
+        if not guild:
+            return
+        if payload.message_id not in plus_messages:
+            return
+        menu_id = plus_messages[payload.message_id]
+        data = menu_data.get(menu_id)
+        if not data:
+            return
+        channel = guild.get_channel(payload.channel_id)
+        if not channel:
+            return
+        try:
+            message = await channel.fetch_message(payload.message_id)
+            plus_author_id = message.author.id
+            if plus_author_id in data['will_attend']:
+                del data['will_attend'][plus_author_id]
+            await update_menu_embed(data)
+        except:
+            pass
+    except Exception as e:
+        print(f"Ошибка в on_raw_reaction_remove: {e}")
 
 @bot.event
 async def on_message(message):
-    """Обработка сообщений + в ветке меню"""
-    if message.content.strip().lower() in ['+', 'плюс']:
-        for menu_id, data in menu_data.items():
-            if data.get('thread') and message.channel.id == data['thread'].id:
-                if data['is_active']:
-                    # ✅ НЕ АВТО-ДОБАВЛЯЕМ, только сохраняем сообщение
-                    plus_messages[message.id] = menu_id
-                    
-                    # Бот ставит реакцию ⏳ (ожидание подтверждения)
-                    try:
-                        await message.add_reaction('⏳')
-                    except:
-                        pass
-                    
-                    break
+    try:
+        if message.content.strip().lower() in ['+', 'плюс']:
+            for menu_id, data in menu_data.items():
+                if data.get('thread') and message.channel.id == data['thread'].id:
+                    if data['is_active']:
+                        plus_messages[message.id] = menu_id
+                        try:
+                            await message.add_reaction('⏳')
+                        except:
+                            pass
+                        break
+    except Exception as e:
+        print(f"Ошибка в on_message: {e}")
     await bot.process_commands(message)
 
 @bot.event
 async def on_message_delete(message):
-    """Обработка удаления сообщения +"""
-    if message.id in plus_messages:
-        menu_id = plus_messages[message.id]
-        data = menu_data.get(menu_id)
-        if data:
-            user_id = message.author.id
-            if user_id in data['will_attend']:
-                del data['will_attend'][user_id]
-            data['removed'].add(user_id)
-            del plus_messages[message.id]
-            await update_menu_embed(data)
+    try:
+        if message.id in plus_messages:
+            menu_id = plus_messages[message.id]
+            data = menu_data.get(menu_id)
+            if data:
+                user_id = message.author.id
+                if user_id in data['will_attend']:
+                    del data['will_attend'][user_id]
+                data['removed'].add(user_id)
+                del plus_messages[message.id]
+                await update_menu_embed(data)
+    except Exception as e:
+        print(f"Ошибка в on_message_delete: {e}")
 
 async def update_menu_embed(data):
-    message = data['message']
-    will_attend = data['will_attend']
-    removed = data['removed']
-    embed = message.embeds[0]
-    will_list = [f"<@{uid}>" for uid in will_attend.keys()]
-    removed_list = [f"<@{uid}>" for uid in removed]
-    for i, field in enumerate(embed.fields):
-        if "ОСНОВА" in field.name:
-            embed.set_field_at(i, name=f"✅ОСНОВА ({len(will_list)})", value="\n".join(will_list) or "*Пока нет*", inline=True)
-        elif "УБРАЛИ ПЛЮС" in field.name:
-            embed.set_field_at(i, name=f"❌УБРАЛИ ПЛЮС ({len(removed_list)})", value="\n".join(removed_list) or "*Пока нет*", inline=True)
-    await message.edit(embed=embed)
+    try:
+        message = data['message']
+        will_attend = data['will_attend']
+        removed = data['removed']
+        embed = message.embeds[0]
+        will_list = [f"<@{uid}>" for uid in will_attend.keys()]
+        removed_list = [f"<@{uid}>" for uid in removed]
+        for i, field in enumerate(embed.fields):
+            if "ОСНОВА" in field.name:
+                embed.set_field_at(i, name=f"✅ОСНОВА ({len(will_list)})", value="\n".join(will_list) or "*Пока нет*", inline=True)
+            elif "УБРАЛИ ПЛЮС" in field.name:
+                embed.set_field_at(i, name=f"❌УБРАЛИ ПЛЮС ({len(removed_list)})", value="\n".join(removed_list) or "*Пока нет*", inline=True)
+        await message.edit(embed=embed)
+    except Exception as e:
+        print(f"Ошибка в update_menu_embed: {e}")
 
 @bot.event
 async def on_ready():
-    await bot.change_presence(status=discord.Status.dnd)
-    print(f'Бот запущен как {bot.user}')
-    print(f'Статус: Не беспокоить (🔴)')
-    print(f'Категория заявок: {CATEGORY_ID}')
-    print(f'Категория личных веток: {PRIVATE_CHANNEL_CATEGORY_ID}')
-    print(f'Канал логов: {LOG_CHANNEL_ID}')
-    print(f'Владелец бота: {OWNER_ID}')
-    print(f'Хранилище веток: {len(user_channels)} записей')
-    
-    bot.add_view(StartApplicationButton())
-    bot.add_view(PrivateChannelButtons())
-    bot.add_view(PrivateChannelCloseButton())
-    bot.add_view(MenuView())
-    print('✅ Постоянные кнопки зарегистрированы')
-    
     try:
+        await bot.change_presence(status=discord.Status.dnd)
+        print(f'Бот запущен как {bot.user}')
+        print(f'Статус: Не беспокоить (🔴)')
+        print(f'Категория заявок: {CATEGORY_ID}')
+        print(f'Категория личных веток: {PRIVATE_CHANNEL_CATEGORY_ID}')
+        print(f'Канал логов: {LOG_CHANNEL_ID}')
+        print(f'Владелец бота: {OWNER_ID}')
+        print(f'Хранилище веток: {len(user_channels)} записей')
+        
+        bot.add_view(StartApplicationButton())
+        bot.add_view(PrivateChannelButtons())
+        bot.add_view(PrivateChannelCloseButton())
+        bot.add_view(MenuView())
+        print('✅ Постоянные кнопки зарегистрированы')
+        
         synced = await bot.tree.sync()
         print(f'Синхронизировано {len(synced)} слэш-команд')
     except Exception as e:
-        print(f'Ошибка синхронизации: {e}')
+        print(f'Ошибка в on_ready: {e}')
 
 bot.run(TOKEN)
