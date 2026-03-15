@@ -62,6 +62,64 @@ def check_menu_admin(user: discord.Member) -> bool:
 
 # --- КЛАССЫ ИНТЕРФЕЙСА (UI) ---
 
+class DeclineReasonModal(Modal, title="Причина отклонения"):
+    def __init__(self, applicant: discord.Member, application_embed: discord.Embed, ticket_channel: discord.TextChannel):
+        super().__init__()
+        self.applicant = applicant
+        self.application_embed = application_embed
+        self.ticket_channel = ticket_channel
+        
+        self.reason_input = TextInput(
+            label="Укажите причину отклонения",
+            placeholder="Например: Не подходит по возрасту / Мало опыта",
+            style=discord.TextStyle.long,
+            max_length=500,
+            required=True
+        )
+        self.add_item(self.reason_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            reason = self.reason_input.value
+            
+            # Отправляем в логи
+            log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
+            if log_channel:
+                log_embed = discord.Embed(title="❌ Заявка ОТКЛОНЕНА", color=discord.Color.red(), timestamp=discord.utils.utcnow())
+                log_embed.add_field(name="👤 Кандидат", value=self.applicant.mention, inline=True)
+                log_embed.add_field(name="🔨 Обработал", value=interaction.user.mention, inline=True)
+                log_embed.add_field(name="📝 Причина отказа", value=reason, inline=False)
+                log_embed.add_field(name="⠀", value="━━━━━━━━━━━━━━━━━━━━", inline=False)
+                
+                if self.application_embed and self.application_embed.fields:
+                    for field in self.application_embed.fields:
+                        log_embed.add_field(name=field.name, value=field.value[:1024], inline=field.inline)
+                
+                log_embed.set_footer(text=f"ID пользователя: {self.applicant.id}")
+                if self.application_embed and self.application_embed.author:
+                    log_embed.set_author(name=self.application_embed.author.name, icon_url=self.application_embed.author.icon_url)
+                
+                await log_channel.send(embed=log_embed)
+            
+            # Уведомляем кандидата в ЛС
+            try:
+                await self.applicant.send(f"❌ Ваша заявка в семью была отклонена.\n📝 **Причина:** {reason}")
+            except:
+                pass
+            
+            # Отвечаем в модальном окне
+            await interaction.response.send_message("Заявка отклонена! Канал будет удален через 5 секунд.", ephemeral=True)
+            
+            # Удаляем канал
+            await asyncio.sleep(5)
+            await self.ticket_channel.delete()
+            
+        except Exception as e:
+            print(f"Ошибка в DeclineReasonModal.on_submit: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"❌ Произошла ошибка: `{str(e)}`", ephemeral=True)
+
+
 class EditMenuModal(Modal, title="Редактировать меню"):
     def __init__(self, menu_id: int, current_title: str):
         super().__init__()
@@ -288,51 +346,12 @@ class MenuCreationModal(Modal, title="Создание меню активнос
                 await interaction.response.send_message(f"❌ Ошибка: `{str(e)}`", ephemeral=True)
 
 
-class DeclineReasonModal(Modal, title="Причина отклонения"):
-    def __init__(self, applicant: discord.Member, application_embed: discord.Embed, interaction: discord.Interaction):
-        super().__init__()
-        self.applicant = applicant
-        self.application_embed = application_embed
-        self.original_interaction = interaction
-        self.reason_input = TextInput(label="Укажите причину отклонения", placeholder="Например: Не подходит по возрасту", style=discord.TextStyle.long, max_length=500, required=True)
-        self.add_item(self.reason_input)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        await self.send_to_logs_with_reason(interaction, self.reason_input.value)
-
-    async def send_to_logs_with_reason(self, interaction: discord.Interaction, reason: str):
-        try:
-            log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
-            if not log_channel:
-                return
-            log_embed = discord.Embed(title="❌ Заявка ОТКЛОНЕНА", color=discord.Color.red(), timestamp=discord.utils.utcnow())
-            log_embed.add_field(name="👤 Кандидат", value=self.applicant.mention, inline=True)
-            log_embed.add_field(name="🔨 Обработал", value=interaction.user.mention, inline=True)
-            log_embed.add_field(name="📝 Причина отказа", value=reason, inline=False)
-            log_embed.add_field(name="⠀", value="━━━━━━━━━━━━━━━━━━━━", inline=False)
-            if self.application_embed.fields:
-                for field in self.application_embed.fields:
-                    log_embed.add_field(name=field.name, value=field.value, inline=field.inline)
-            log_embed.set_footer(text=f"ID пользователя: {self.applicant.id}")
-            if self.application_embed.author:
-                log_embed.set_author(name=self.application_embed.author.name, icon_url=self.application_embed.author.icon_url)
-            await log_channel.send(embed=log_embed)
-            try:
-                await self.applicant.send(f"❌ Ваша заявка отклонена.\n📝 **Причина:** {reason}")
-            except:
-                pass
-            await self.original_interaction.followup.send("Заявка отклонена! Канал будет удален через 5 секунд.", ephemeral=True)
-            await asyncio.sleep(5)
-            await interaction.channel.delete()
-        except Exception as e:
-            print(f"Ошибка в send_to_logs_with_reason: {e}")
-
-
 class TicketButtons(View):
-    def __init__(self, applicant: discord.Member, application_embed: discord.Embed):
+    def __init__(self, applicant: discord.Member, application_embed: discord.Embed, ticket_channel: discord.TextChannel):
         super().__init__(timeout=None)
         self.applicant = applicant
         self.application_embed = application_embed
+        self.ticket_channel = ticket_channel  # ✅ Сохраняем канал
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         try:
@@ -356,11 +375,11 @@ class TicketButtons(View):
             log_embed.add_field(name="👤 Кандидат", value=self.applicant.mention, inline=True)
             log_embed.add_field(name="🔨 Обработал", value=interaction.user.mention, inline=True)
             log_embed.add_field(name="⠀", value="━━━━━━━━━━━━━━━━━━━━", inline=False)
-            if self.application_embed.fields:
+            if self.application_embed and self.application_embed.fields:
                 for field in self.application_embed.fields:
                     log_embed.add_field(name=field.name, value=field.value, inline=field.inline)
             log_embed.set_footer(text=f"ID пользователя: {self.applicant.id}")
-            if self.application_embed.author:
+            if self.application_embed and self.application_embed.author:
                 log_embed.set_author(name=self.application_embed.author.name, icon_url=self.application_embed.author.icon_url)
             await log_channel.send(embed=log_embed)
         except Exception as e:
@@ -419,12 +438,16 @@ class TicketButtons(View):
     @discord.ui.button(label="Отклонить", style=discord.ButtonStyle.red, custom_id="decline_app")
     async def decline_callback(self, interaction: discord.Interaction, button: Button):
         try:
+            # ✅ ПЕРЕДАЁМ КАНАЛ В МОДАЛЬНОЕ ОКНО
             if not interaction.response.is_done():
-                await interaction.response.send_modal(DeclineReasonModal(self.applicant, self.application_embed, interaction))
+                await interaction.response.send_modal(
+                    DeclineReasonModal(self.applicant, self.application_embed, self.ticket_channel)
+                )
         except Exception as e:
             print(f"Ошибка в decline_callback: {e}")
+            print(f"Traceback: {traceback.format_exc()}")
             if not interaction.response.is_done():
-                await interaction.response.send_message("Произошла ошибка при обработке.", ephemeral=True)
+                await interaction.response.send_message(f"❌ Произошла ошибка: `{str(e)}`", ephemeral=True)
 
     @discord.ui.button(label="Позвать на собес", style=discord.ButtonStyle.blurple, custom_id="interview_app")
     async def interview_callback(self, interaction: discord.Interaction, button: Button):
@@ -630,7 +653,8 @@ class ApplicationModal(Modal, title="Анкета в семью"):
             role_mention = notify_role.mention if notify_role else ""
             msg = await new_channel.send(f"{role_mention} Новая заявка от {interaction.user.mention}", embed=app_embed)
             
-            view = TicketButtons(interaction.user, app_embed)
+            # ✅ ПЕРЕДАЁМ КАНАЛ В КНОПКИ
+            view = TicketButtons(interaction.user, app_embed, new_channel)
             await msg.edit(view=view)
             
             if not interaction.response.is_done():
