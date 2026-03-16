@@ -82,7 +82,6 @@ class DeclineReasonModal(Modal, title="Причина отклонения"):
         try:
             reason = self.reason_input.value
             
-            # Отправляем в логи
             log_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
             if log_channel:
                 log_embed = discord.Embed(title="❌ Заявка ОТКЛОНЕНА", color=discord.Color.red(), timestamp=discord.utils.utcnow())
@@ -101,23 +100,24 @@ class DeclineReasonModal(Modal, title="Причина отклонения"):
                 
                 await log_channel.send(embed=log_embed)
             
-            # Уведомляем кандидата в ЛС
             try:
                 await self.applicant.send(f"❌ Ваша заявка в семью была отклонена.\n📝 **Причина:** {reason}")
             except:
                 pass
             
-            # Отвечаем в модальном окне
             await interaction.response.send_message("Заявка отклонена! Канал будет удален через 5 секунд.", ephemeral=True)
-            
-            # Удаляем канал
             await asyncio.sleep(5)
             await self.ticket_channel.delete()
             
         except Exception as e:
             print(f"Ошибка в DeclineReasonModal.on_submit: {e}")
-            if not interaction.response.is_done():
-                await interaction.response.send_message(f"❌ Произошла ошибка: `{str(e)}`", ephemeral=True)
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(f"❌ Произошла ошибка.", ephemeral=True)
+                else:
+                    await interaction.followup.send(f"❌ Произошла ошибка.", ephemeral=True)
+            except:
+                pass
 
 
 class EditMenuModal(Modal, title="Редактировать меню"):
@@ -351,7 +351,7 @@ class TicketButtons(View):
         super().__init__(timeout=None)
         self.applicant = applicant
         self.application_embed = application_embed
-        self.ticket_channel = ticket_channel  # ✅ Сохраняем канал
+        self.ticket_channel = ticket_channel
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         try:
@@ -438,7 +438,6 @@ class TicketButtons(View):
     @discord.ui.button(label="Отклонить", style=discord.ButtonStyle.red, custom_id="decline_app")
     async def decline_callback(self, interaction: discord.Interaction, button: Button):
         try:
-            # ✅ ПЕРЕДАЁМ КАНАЛ В МОДАЛЬНОЕ ОКНО
             if not interaction.response.is_done():
                 await interaction.response.send_modal(
                     DeclineReasonModal(self.applicant, self.application_embed, self.ticket_channel)
@@ -614,14 +613,15 @@ class ApplicationModal(Modal, title="Анкета в семью"):
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
+            # ✅ ПЕРВОЕ ДЕЙСТВИЕ - ОТКЛАДЫВАЕМ ОТВЕТ
+            await interaction.response.defer(ephemeral=True)
+            
             category = interaction.guild.get_channel(CATEGORY_ID)
             if not category:
-                if not interaction.response.is_done():
-                    await interaction.response.send_message("Ошибка: Категория для заявок не найдена.", ephemeral=True)
+                await interaction.followup.send("❌ Категория для заявок не найдена.", ephemeral=True)
                 return
             if not isinstance(category, discord.CategoryChannel):
-                if not interaction.response.is_done():
-                    await interaction.response.send_message("Ошибка: Указанный ID не является категорией.", ephemeral=True)
+                await interaction.followup.send("❌ Указанный ID не является категорией.", ephemeral=True)
                 return
 
             channel_name = f"заявка-{interaction.user.name}"
@@ -653,18 +653,22 @@ class ApplicationModal(Modal, title="Анкета в семью"):
             role_mention = notify_role.mention if notify_role else ""
             msg = await new_channel.send(f"{role_mention} Новая заявка от {interaction.user.mention}", embed=app_embed)
             
-            # ✅ ПЕРЕДАЁМ КАНАЛ В КНОПКИ
             view = TicketButtons(interaction.user, app_embed, new_channel)
             await msg.edit(view=view)
             
-            if not interaction.response.is_done():
-                await interaction.response.send_message(f"Ваша заявка отправлена! Проверьте канал {new_channel.mention}", ephemeral=True)
+            await interaction.followup.send(f"✅ Ваша заявка отправлена! Проверьте канал {new_channel.mention}", ephemeral=True)
             
         except Exception as e:
             error_trace = traceback.format_exc()
-            print(f"=== ОШИБКА ===\n{interaction.user.name}\n{e}\n{error_trace}")
-            if not interaction.response.is_done():
-                await interaction.response.send_message("Произошла ошибка при создании канала.", ephemeral=True)
+            print(f"=== ОШИБКА ПРИ СОЗДАНИИ ЗАЯВКИ ===")
+            print(f"Пользователь: {interaction.user.name} ({interaction.user.id})")
+            print(f"Ошибка: {e}")
+            print(f"Traceback:\n{error_trace}")
+            print(f"=================================")
+            try:
+                await interaction.followup.send("❌ Произошла ошибка при создании заявки. Администратор уведомлен.", ephemeral=True)
+            except:
+                pass
 
 
 class StartApplicationButton(View):
